@@ -1,0 +1,23 @@
+# Environnements virtuels
+.venv/
+venv/
+
+# Index Chroma (vector store)
+chroma_store/
+
+# Cache / historique local
+__pycache__/
+*.pyc
+memory_store.json
+
+# Config sensible
+.env
+
+# Fichiers système
+Thumbs.db
+.DS_Store
+
+# Fichiers de tests (on ne les pousse pas sur GitHub)
+tests/
+Tests/
+test_*.py

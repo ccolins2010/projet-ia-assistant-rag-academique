@@ -1,0 +1,19 @@
+### Cours sur les Réseaux Informatiques
+
+Un réseau informatique est un ensemble d’équipements reliés entre eux pour échanger des données.  
+Le modèle OSI (Open Systems Interconnection) comprend 7 couches :
+1. Physique
+2. Liaison de données
+3. Réseau
+4. Transport
+5. Session
+6. Présentation
+7. Application
+
+TCP (Transmission Control Protocol) est un protocole orienté connexion qui garantit la livraison des paquets.
+UDP (User Datagram Protocol) est sans connexion et plus rapide, mais sans garantie de livraison.
+
+#### Concepts clés :
+- Adresse IP : identifie chaque machine sur le réseau.
+- Routeur : assure le transfert des paquets entre réseaux.
+- DNS : traduit les noms de domaine en adresses IP.

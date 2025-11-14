@@ -1,0 +1,18 @@
+### Cours d’Introduction à Python
+
+Python est un langage de programmation interprété, simple et polyvalent.  
+Il est largement utilisé pour l’analyse de données, l’intelligence artificielle et le développement web.
+
+#### Structures de base :
+- Variables : `x = 5`
+- Listes : `[1, 2, 3]`
+- Boucles : `for i in range(5):`
+- Fonctions : `def addition(a, b): return a + b`
+
+#### Bibliothèques populaires :
+- NumPy : calcul scientifique
+- Pandas : manipulation de données
+- Matplotlib : visualisation
+- Scikit-learn : machine learning
+
+Python est apprécié pour sa syntaxe claire et son large écosystème de bibliothèques.

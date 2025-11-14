@@ -1,0 +1,15 @@
+### Cours d'Intelligence Artificielle
+
+L’intelligence artificielle (IA) est un domaine de l’informatique visant à créer des systèmes capables de réaliser des tâches nécessitant normalement l’intelligence humaine.
+
+#### Sous-domaines de l'IA :
+- Apprentissage supervisé : apprentissage à partir d'exemples étiquetés.
+- Apprentissage non supervisé : découverte de structures dans les données sans étiquettes.
+- Apprentissage par renforcement : apprentissage par essai-erreur et récompenses.
+
+Les réseaux de neurones sont des modèles essentiels de l'IA moderne. Ils sont composés de couches de neurones artificiels interconnectés, permettant d'apprendre des représentations complexes.
+
+#### Applications :
+- Reconnaissance d’images
+- Traitement automatique du langage naturel
+- Véhicules autonomes
