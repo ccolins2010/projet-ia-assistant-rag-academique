@@ -6,23 +6,25 @@ from typing import Literal, Tuple, Optional
 router.py
 ---------
 Routage simple et robuste vers :
-- calc      : calculatrice (sin, cos, sqrt, +, -, ^, etc.)
-- weather   : météo
-- web       : recherche web
-- todo      : gestion TODO
-- rag       : questions sur les documents internes
-- smalltalk : salutations simples
+
+- "calc"      : calculatrice (sin, cos, sqrt, +, -, ^, etc.)
+- "weather"   : météo
+- "web"       : recherche web
+- "todo"      : gestion TODO
+- "rag"       : questions sur les documents internes
+- "smalltalk" : salutations / conversation légère
 
 Idées clés :
 - On reconnaît d'abord les outils non ambigus (météo, web, todo).
 - La calculatrice NE se déclenche que s'il y a vraiment des maths
   (chiffres + opérateurs/fonctions).
-- Une phrase comme "c est quoi la cuisine" ira bien vers RAG + web,
+- Une phrase comme "c est quoi la cuisine" ira vers RAG + web,
   pas vers la calculatrice.
 """
 
 # ───────────────────────── Patterns par intention ─────────────────────────
 
+# Mots-clés pour météo, web, todo
 _PATTERNS = {
     "weather": re.compile(
         r"\b(meteo|météo|temperature|température|fait-il|fait il|temps|vent|pluie|ensoleillé|neige)\b",
@@ -44,7 +46,7 @@ _CALC_MAIN_RE = re.compile(
     re.I,
 )
 
-# Indices d'expressions mathématiques (sans forcément les verbes)
+# Indices d'expressions mathématiques
 #   - 2+3, 12 / 4, 3*5, 2^8
 #   - 23², 10³
 #   - sin45, cos(30), sqrt16, log10(100), pi, π
@@ -63,7 +65,7 @@ _MATH_HINT_RE = re.compile(
 # smalltalk (salutations)
 _GREET = re.compile(r"^\s*(bonjour|salut|coucou|bonsoir|hello|hey)\b", re.I)
 
-# Questions "de cours"
+# Questions "de cours" (explicites)
 _DOC_QUE = re.compile(
     r"\b(c('|\s*)est\s+quoi|définis|definition|définition|explique|selon le cours|dans le cours)\b",
     re.I,
@@ -72,11 +74,18 @@ _DOC_QUE = re.compile(
 
 # ───────────────────────── Helpers ─────────────────────────
 
+
 def _looks_like_math(text: str) -> bool:
     """
     Retourne True si 'text' contient vraiment une expression mathématique.
-    - exige au moins un chiffre (évite: "c est quoi la cuisine")
-    - + un des patterns de _MATH_HINT_RE
+
+    Conditions :
+      - il doit y avoir au moins un chiffre
+      - ET un des patterns de _MATH_HINT_RE
+
+    Ça évite par exemple que :
+      "c est quoi la cuisine"
+    soit pris pour du calcul.
     """
     if not text:
         return False
@@ -87,14 +96,24 @@ def _looks_like_math(text: str) -> bool:
 
 # ───────────────────────── Noyau de routage ─────────────────────────
 
-def detect_intent(text: str) -> Literal["weather", "calc", "web", "todo", "rag", "smalltalk"]:
+
+def detect_intent(
+    text: str,
+) -> Literal["weather", "calc", "web", "todo", "rag", "smalltalk"]:
     """
     Analyse la question en langage naturel et renvoie une intention.
+
+    Logique :
+      1) Outils spécifiques (météo, web, todo)
+      2) Calculatrice (verbe explicite ou expression math)
+      3) Smalltalk (salutations)
+      4) Questions de cours explicites
+      5) Par défaut : RAG (documents internes)
     """
     q = (text or "").strip()
 
     # 1) Outils "non ambigus" d'abord (météo, web, todo)
-    #    -> ça évite que "météo à Paris" parte dans la calculatrice
+    #    -> évite que "météo à Paris" parte dans la calculatrice
     if _PATTERNS["weather"].search(q) and not _CALC_MAIN_RE.search(q):
         return "weather"
     if _PATTERNS["web"].search(q):
@@ -124,6 +143,9 @@ def detect_intent(text: str) -> Literal["weather", "calc", "web", "todo", "rag",
 
 def route(text: str) -> Tuple[str, Optional[str]]:
     """
-    Retourne (intent, payload). Le payload est ici simplement le texte brut.
+    Retourne (intent, payload).
+
+    Ici, le payload est simplement le texte brut original, que
+    l'application (app.py) transmettra ensuite au bon outil ou au RAG.
     """
     return detect_intent(text), text

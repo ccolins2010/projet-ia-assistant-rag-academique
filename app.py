@@ -25,6 +25,7 @@ from typing import List, Dict, Tuple, Optional
 
 import streamlit as st
 from dotenv import load_dotenv
+
 load_dotenv()  # charge .env (SMTP_* etc.)
 
 # RAG (local)
@@ -45,11 +46,14 @@ from langchain_ollama import ChatOllama
 
 # ───────────────────────── Config & Mémoire ─────────────────────────
 
-st.set_page_config(page_title="Assistant académique (RAG + Agents)", page_icon="🎓", layout="centered")
+st.set_page_config(
+    page_title="Assistant académique (RAG + Agents)", page_icon="🎓", layout="centered"
+)
 st.title("🎓 Assistant académique — RAG + Agents (Ollama + Chroma + DuckDuckGo)")
 
 # 💄 CSS : boutons sidebar compacts et homogènes
-st.markdown("""
+st.markdown(
+    """
 <style>
 div[data-testid="stSidebar"] .stButton>button {
     padding: 0.4rem 0.6rem;
@@ -59,7 +63,9 @@ div[data-testid="stSidebar"] .stButton>button {
     margin-bottom: 0.35rem;
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 ROOT = Path(__file__).parent
 MEMORY_PATH = ROOT / "memory_store.json"  # historique persistant sur disque
@@ -73,7 +79,11 @@ def load_memory() -> List[Dict[str, str]]:
         try:
             data = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
             if isinstance(data, list):
-                return [t for t in data if isinstance(t, dict) and "role" in t and "content" in t]
+                return [
+                    t
+                    for t in data
+                    if isinstance(t, dict) and "role" in t and "content" in t
+                ]
         except Exception:
             pass
     return []
@@ -82,7 +92,9 @@ def load_memory() -> List[Dict[str, str]]:
 def save_memory(history: List[Dict[str, str]]) -> None:
     """Sauvegarde l'historique sur disque. Silencieux si erreur."""
     try:
-        MEMORY_PATH.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+        MEMORY_PATH.write_text(
+            json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     except Exception:
         pass
 
@@ -95,7 +107,9 @@ def trim_history():
 
 def get_smalltalk_llm():
     """LLM local pour 'smalltalk' (via Ollama)."""
-    return ChatOllama(model="llama3.2:3b", temperature=0.5)  # base_url défaut : http://127.0.0.1:11434
+    return ChatOllama(
+        model="llama3.2:3b", temperature=0.5
+    )  # base_url défaut : http://127.0.0.1:11434
 
 
 # ──────────────────────── État de session ──────────────────────────
@@ -121,7 +135,10 @@ if "pending_web" not in st.session_state:
 st.sidebar.header("⚙️ Contrôles")
 
 # Nouveau chat : reset session (mais garde le fichier memory_store.json)
-if st.sidebar.button("🆕 Nouveau chat", help="Réinitialise la discussion (mais garde la mémoire sur disque)."):
+if st.sidebar.button(
+    "🆕 Nouveau chat",
+    help="Réinitialise la discussion (mais garde la mémoire sur disque).",
+):
     st.session_state.chat_history = []
     st.session_state.last_sources = []
     st.session_state.last_mode = None
@@ -129,7 +146,9 @@ if st.sidebar.button("🆕 Nouveau chat", help="Réinitialise la discussion (mai
     st.success("Nouvelle discussion démarrée ✅")
 
 # Effacer historique : reset session + vidage du fichier JSON
-if st.sidebar.button("🧹 Effacer historique", help="Vide la session et efface l'historique persistant."):
+if st.sidebar.button(
+    "🧹 Effacer historique", help="Vide la session et efface l'historique persistant."
+):
     st.session_state.chat_history = []
     try:
         MEMORY_PATH.write_text("[]", encoding="utf-8")
@@ -138,14 +157,18 @@ if st.sidebar.button("🧹 Effacer historique", help="Vide la session et efface 
     st.success("Historique effacé ✅")
 
 # Bouton réindexer (utile si le développeur met à jour les fichiers de RAG_Data/)
-if st.sidebar.button("🔄 Réindexer", help="Reconstruit l’index à partir des documents internes."):
+if st.sidebar.button(
+    "🔄 Réindexer", help="Reconstruit l’index à partir des documents internes."
+):
     reindex()
     st.sidebar.success("Index reconstruit avec succès ✅")
     # Note informative dans le chat
-    st.session_state.chat_history.append({
-        "role": "assistant",
-        "content": "ℹ️ Index reconstruit. Les prochaines réponses utiliseront la dernière version des documents internes."
-    })
+    st.session_state.chat_history.append(
+        {
+            "role": "assistant",
+            "content": "ℹ️ Index reconstruit. Les prochaines réponses utiliseront la dernière version des documents internes.",
+        }
+    )
     trim_history()
     save_memory(st.session_state.chat_history)
 
@@ -160,6 +183,7 @@ for turn in st.session_state.chat_history:
 
 # ──────────────────── Helper d’affichage web ───────────────────────
 
+
 def render_web_results(json_payload: str) -> str:
     """
     Mise en forme des résultats DuckDuckGo.
@@ -172,7 +196,7 @@ def render_web_results(json_payload: str) -> str:
         if not isinstance(data, list):
             return f"Résultats (brut):\n\n```json\n{json_payload}\n```"
 
-    # Render list of results
+        # Render list of results
         lines = ["**Résultats web :**"]
         for i, item in enumerate(data[:8], 1):
             title = item.get("title") or "(sans titre)"
@@ -188,22 +212,50 @@ def render_web_results(json_payload: str) -> str:
 
 
 # ──────────────────── E-mail : détection + envoi SMTP ──────────────
+# VERSION PRO :
+#   - tolère les espaces autour de @ et du point (ccolins @ yahoo . fr)
+#   - mots-clés : "envoie", "envoies", "envoi", "mail", "email", "e-mail", "envoyer"
+#   - commande e-mail prioritaire sur le reste (même si pending_web est actif)
 
 EMAIL_RE = re.compile(r"\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b")
 
+
 def detect_email_command(text: str) -> Optional[str]:
     """
-    Détecte une commande pour envoyer la DERNIÈRE réponse par e-mail :
-      - "envoie la réponse à nom@domaine.com"
-      - "mail cette réponse à ...", "email", "e-mail", "envoyer ..."
-    Retourne la première adresse e-mail trouvée, sinon None.
+    Détecte une commande pour envoyer la DERNIÈRE réponse par e-mail.
+
+    Exemples reconnus :
+      - "envoie la réponse à ccolins2010@yahoo.fr"
+      - "envoi la reponse par mail à ccolins2010 @ yahoo . fr"
+      - "email ccolins2010@yahoo.fr"
+
+    Stratégie :
+      1. Détecter un mot-clé d'action (envoie, envoies, envoi, mail, email, e-mail, envoyer).
+      2. Normaliser le texte pour tolérer les espaces autour de '@' et '.'.
+      3. Extraire la première adresse valide.
     """
-    t = (text or "").lower()
-    if any(k in t for k in ["envoie", "envoies", "mail", "email", "e-mail", "envoyer"]):
-        m = EMAIL_RE.search(text)
-        if m:
-            return m.group(1)
-    return None
+    if not text:
+        return None
+
+    t = text.lower()
+
+    # Mots-clés pour déclencher le mode "e-mail"
+    keywords = ["envoie", "envoies", "envoi", "mail", "email", "e-mail", "envoyer"]
+    if not any(k in t for k in keywords):
+        return None
+
+    # Normalisation "pro" :
+    #  - "x @ y . fr" → "x@y.fr"
+    normalized = re.sub(r"\s*@\s*", "@", text)  # espaces autour du @
+    normalized = re.sub(r"\s*\.\s*", ".", normalized)  # espaces autour du point
+
+    m = EMAIL_RE.search(normalized)
+    if not m:
+        return None
+
+    email = m.group(1).strip()
+    return email or None
+
 
 def send_email_smtp(to_addr: str, subject: str, body: str) -> Tuple[bool, str]:
     """
@@ -219,7 +271,7 @@ def send_email_smtp(to_addr: str, subject: str, body: str) -> Tuple[bool, str]:
     host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     port = int(os.getenv("SMTP_PORT", "587"))
     user = os.getenv("SMTP_USER")
-    pwd  = os.getenv("SMTP_PASS")
+    pwd = os.getenv("SMTP_PASS")
     from_addr = os.getenv("SMTP_FROM", user)
 
     if not (user and pwd and from_addr):
@@ -243,65 +295,27 @@ def send_email_smtp(to_addr: str, subject: str, body: str) -> Tuple[bool, str]:
 # ──────────────────── Logique principale ───────────────────────────
 
 YES_RE = re.compile(r"^\s*(oui|o|yes|y)\b", re.I)
-NO_RE  = re.compile(r"^\s*(non|n|no)\b", re.I)
+NO_RE = re.compile(r"^\s*(non|n|no)\b", re.I)
+
 
 def handle_user_query(user_text: str):
     """
     Route la requête et exécute smalltalk / outils / RAG / consentement web / e-mail,
     met à jour l'historique et affiche le résultat.
+
+    Ordre PRO :
+      0) Commande e-mail (prioritaire, peut être utilisée à tout moment).
+      1) Si on attend déjà un consentement web → on interprète "oui/non".
+      2) Sinon : détection d'intention (smalltalk / outils / RAG).
     """
 
-    # 0) Si on attend un consentement web, on traite OBLIGATOIREMENT ce cas en premier
-    if st.session_state.pending_web is not None:
-        original_query = st.session_state.pending_web.get("query", "")
-        if YES_RE.search(user_text or ""):
-            # Recherche web sur la question originale
-            raw_json = tool_web_search(original_query)
-            answer_md = "🛠️ **Recherche Web (suite à ton consentement)**\n\n" + render_web_results(raw_json)
-            mode = "web"; sources = []
-            st.session_state.pending_web = None
-
-            st.session_state.chat_history.append({"role": "user", "content": user_text})
-            st.session_state.chat_history.append({"role": "assistant", "content": answer_md})
-            trim_history(); save_memory(st.session_state.chat_history)
-            st.session_state.last_sources = sources
-            st.session_state.last_mode = mode
-            with st.chat_message("assistant"):
-                st.markdown(answer_md)
-            return
-
-        if NO_RE.search(user_text or ""):
-            # On reste sur les documents internes
-            answer_md = "👍 D'accord, je reste sur tes documents internes. Comment puis-je t'aider autrement ?"
-            mode = "rag"; sources = []
-            st.session_state.pending_web = None
-
-            st.session_state.chat_history.append({"role": "user", "content": user_text})
-            st.session_state.chat_history.append({"role": "assistant", "content": answer_md})
-            trim_history(); save_memory(st.session_state.chat_history)
-            st.session_state.last_sources = sources
-            st.session_state.last_mode = mode
-            with st.chat_message("assistant"):
-                st.markdown(answer_md)
-            return
-
-        # Ni oui ni non → on reformule la demande
-        st.session_state.chat_history.append({"role": "user", "content": user_text})
-        answer_md = "Je n’ai pas compris. Souhaites-tu que je cherche **sur le web** ? Réponds par **oui** ou **non**."
-        st.session_state.chat_history.append({"role": "assistant", "content": answer_md})
-        trim_history(); save_memory(st.session_state.chat_history)
-        st.session_state.last_sources = []
-        st.session_state.last_mode = "rag"
-        with st.chat_message("assistant"):
-            st.markdown(answer_md)
-        return
-
-    # 0-bis) Commande e-mail ? (avant le flux normal)
+    # 0) Commande e-mail PRIORITAIRE (même si pending_web est actif)
     to_addr = detect_email_command(user_text)
     if to_addr:
+        # On loggue le message utilisateur
         st.session_state.chat_history.append({"role": "user", "content": user_text})
 
-        # Dernière réponse assistant à envoyer
+        # On cherche la dernière réponse assistant pour l'envoyer
         last_assistant = ""
         for t in reversed(st.session_state.chat_history):
             if t["role"] == "assistant":
@@ -311,24 +325,95 @@ def handle_user_query(user_text: str):
         if not last_assistant:
             answer_md = "Je n’ai pas de réponse précédente à envoyer."
         else:
-            ok, info = send_email_smtp(to_addr, subject="Réponse de l'assistant", body=last_assistant)
+            ok, info = send_email_smtp(
+                to_addr,
+                subject="Réponse de l'assistant",
+                body=last_assistant,
+            )
             answer_md = info
 
-        st.session_state.chat_history.append({"role": "assistant", "content": answer_md})
-        trim_history(); save_memory(st.session_state.chat_history)
+        # On ajoute le retour dans l'historique
+        st.session_state.chat_history.append(
+            {"role": "assistant", "content": answer_md}
+        )
+        trim_history()
+        save_memory(st.session_state.chat_history)
         st.session_state.last_sources = []
         st.session_state.last_mode = "email"
+
         with st.chat_message("assistant"):
             st.markdown(answer_md)
         return
 
-    # 1) Parcours normal (pas de consentement en cours, pas de commande e-mail)
+    # 1) Si on attend un consentement web, on traite OBLIGATOIREMENT ce cas
+    if st.session_state.pending_web is not None:
+        original_query = st.session_state.pending_web.get("query", "")
+        if YES_RE.search(user_text or ""):
+            # Recherche web sur la question originale
+            raw_json = tool_web_search(original_query)
+            answer_md = (
+                "🛠️ **Recherche Web (suite à ton consentement)**\n\n"
+                + render_web_results(raw_json)
+            )
+            mode = "web"
+            sources = []
+            st.session_state.pending_web = None
+
+            st.session_state.chat_history.append({"role": "user", "content": user_text})
+            st.session_state.chat_history.append(
+                {"role": "assistant", "content": answer_md}
+            )
+            trim_history()
+            save_memory(st.session_state.chat_history)
+            st.session_state.last_sources = sources
+            st.session_state.last_mode = mode
+            with st.chat_message("assistant"):
+                st.markdown(answer_md)
+            return
+
+        if NO_RE.search(user_text or ""):
+            # On reste sur les documents internes
+            answer_md = "👍 D'accord, je reste sur tes documents internes. Comment puis-je t'aider autrement ?"
+            mode = "rag"
+            sources = []
+            st.session_state.pending_web = None
+
+            st.session_state.chat_history.append({"role": "user", "content": user_text})
+            st.session_state.chat_history.append(
+                {"role": "assistant", "content": answer_md}
+            )
+            trim_history()
+            save_memory(st.session_state.chat_history)
+            st.session_state.last_sources = sources
+            st.session_state.last_mode = mode
+            with st.chat_message("assistant"):
+                st.markdown(answer_md)
+            return
+
+        # Ni oui ni non → on reformule la demande
+        st.session_state.chat_history.append({"role": "user", "content": user_text})
+        answer_md = (
+            "Je n’ai pas compris. Souhaites-tu que je cherche **sur le web** ? "
+            "Réponds par **oui** ou **non**."
+        )
+        st.session_state.chat_history.append(
+            {"role": "assistant", "content": answer_md}
+        )
+        trim_history()
+        save_memory(st.session_state.chat_history)
+        st.session_state.last_sources = []
+        st.session_state.last_mode = "rag"
+        with st.chat_message("assistant"):
+            st.markdown(answer_md)
+        return
+
+    # 2) Parcours normal (pas de consentement en cours)
     st.session_state.chat_history.append({"role": "user", "content": user_text})
 
-    # 1.a) Détection d'intention
+    # 2.a) Détection d'intention (via router.py)
     intent, payload = route(user_text)
 
-    # 1.b) Smalltalk → LLM local sans RAG
+    # 2.b) Smalltalk → LLM local sans RAG
     if intent == "smalltalk":
         llm = get_smalltalk_llm()
         msgs = [
@@ -338,15 +423,18 @@ def handle_user_query(user_text: str):
         ai = llm.invoke(msgs)
         answer_md = getattr(ai, "content", str(ai))
 
-        st.session_state.chat_history.append({"role": "assistant", "content": answer_md})
-        trim_history(); save_memory(st.session_state.chat_history)
+        st.session_state.chat_history.append(
+            {"role": "assistant", "content": answer_md}
+        )
+        trim_history()
+        save_memory(st.session_state.chat_history)
         st.session_state.last_sources = []
         st.session_state.last_mode = "smalltalk"
         with st.chat_message("assistant"):
             st.markdown(answer_md)
         return
 
-    # 1.c) Intentions "outils" → outils DIRECTEMENT (sans passer par RAG)
+    # 2.c) Intentions "outils" → outils DIRECTEMENT (sans passer par RAG)
     if intent in {"calc", "weather", "todo", "web"}:
         try:
             if intent == "calc":
@@ -360,7 +448,10 @@ def handle_user_query(user_text: str):
                 answer_md = f"🛠️ **Outil TODO**\n\n{out}"
             else:  # "web" explicite
                 raw_json = tool_web_search(payload)
-                answer_md = f"🛠️ **Outil Recherche Web (DuckDuckGo)**\n\n{render_web_results(raw_json)}"
+                answer_md = (
+                    "🛠️ **Outil Recherche Web (DuckDuckGo)**\n\n"
+                    f"{render_web_results(raw_json)}"
+                )
 
             mode, sources = intent, []
 
@@ -368,22 +459,27 @@ def handle_user_query(user_text: str):
             mode, sources = "error", []
             answer_md = f"⚠️ Erreur: {e}"
 
-        st.session_state.chat_history.append({"role": "assistant", "content": answer_md})
-        trim_history(); save_memory(st.session_state.chat_history)
+        st.session_state.chat_history.append(
+            {"role": "assistant", "content": answer_md}
+        )
+        trim_history()
+        save_memory(st.session_state.chat_history)
         st.session_state.last_sources = sources
         st.session_state.last_mode = mode
         with st.chat_message("assistant"):
             st.markdown(answer_md)
         return
 
-    # 2) Sinon → Tenter RAG EN PREMIER (exigence du projet)
+    # 3) Sinon → Tenter RAG EN PREMIER (questions "de cours")
     try:
         with st.spinner("🔎 Recherche dans les documents internes..."):
             res = answer_question(user_text, chat_history=st.session_state.chat_history)
 
         answer_text = res.get("answer", "")
         sources = res.get("source_documents", []) or []
-        found = (len(sources) > 0) and ("je ne sais pas" not in (answer_text or "").lower())
+        found = (len(sources) > 0) and (
+            "je ne sais pas" not in (answer_text or "").lower()
+        )
 
         if found:
             # Injecter la meilleure source dans la réponse (une seule fois)
@@ -394,10 +490,17 @@ def handle_user_query(user_text: str):
                     top_src = meta["source"]
                     break
 
-            answer_md = f"{answer_text}\n\n---\n📎 **Source** : `{top_src}`" if top_src else answer_text
+            answer_md = (
+                f"{answer_text}\n\n---\n📎 **Source** : `{top_src}`"
+                if top_src
+                else answer_text
+            )
 
-            st.session_state.chat_history.append({"role": "assistant", "content": answer_md})
-            trim_history(); save_memory(st.session_state.chat_history)
+            st.session_state.chat_history.append(
+                {"role": "assistant", "content": answer_md}
+            )
+            trim_history()
+            save_memory(st.session_state.chat_history)
             st.session_state.last_sources = sources
             st.session_state.last_mode = "rag"
             with st.chat_message("assistant"):
@@ -408,7 +511,7 @@ def handle_user_query(user_text: str):
         # Si RAG plante, on continue vers la demande de consentement web
         st.warning(f"RAG indisponible: {e}")
 
-    # 3) RAG n'a rien trouvé → DEMANDER le consentement web (oui/non)
+    # 4) RAG n'a rien trouvé → DEMANDER le consentement web (oui/non)
     st.session_state.pending_web = {"query": user_text}
     answer_md = (
         "Je n’ai rien trouvé dans **les documents internes**.\n\n"
@@ -417,7 +520,8 @@ def handle_user_query(user_text: str):
     mode, sources = "rag", []
 
     st.session_state.chat_history.append({"role": "assistant", "content": answer_md})
-    trim_history(); save_memory(st.session_state.chat_history)
+    trim_history()
+    save_memory(st.session_state.chat_history)
     st.session_state.last_sources = sources
     st.session_state.last_mode = mode
     with st.chat_message("assistant"):
