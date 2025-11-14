@@ -10,7 +10,7 @@ Assistant intelligent capable de répondre à des questions à partir de documen
 - Indexe avec **ChromaDB** et `sentence-transformers/all-MiniLM-L6-v2`  
 - Analyse les questions et extrait les passages pertinents  
 - Construit un contexte contrôlé pour éviter les hallucinations  
-- Répond **uniquement** avec les données des documents internes  
+- Répond **uniquement** avec les données présentes dans les documents internes  
 
 ➡️ Fonctionne avec : `.txt`, `.pdf`, `.docx`
 
@@ -19,24 +19,26 @@ Assistant intelligent capable de répondre à des questions à partir de documen
 ### 🔹 2. Outils intégrés
 
 #### 🧮 Calculatrice intelligente
-- Expressions mathématiques : `2+3*4`, `23²`, `sin45`, `cos30 + sqrt16`, etc.  
-- Conversion automatique degrés → radians  
-- Nettoyage d’expression tolérant aux fautes
+- Comprend : `2+3*4`, `23²`, `sqrt16`, `sin45`, `cos30`, etc.  
+- Conversion auto degrés → radians (`sin30°` → `sin(0.52)`)  
+- Nettoyage automatique des expressions  
 
 #### 🌦️ Météo
-- Récupération en temps réel via API  
-- Exemple : `donne-moi la météo pour Paris`
+- Récupération de la météo en temps réel  
+- Exemple : `donne-moi la météo pour Nice`
 
 #### 🔍 Recherche web
-- Utilise **DuckDuckGo** via `ddgs`  
-- Déclenchée uniquement si l’utilisateur donne son accord (oui/non)
+- Utilise **DuckDuckGo Search**  
+- Ne s’active **que si l’utilisateur donne son accord** (réponse “oui”)  
 
 #### 📝 Gestion TODO
-- Ajout (`add:`), validation (`done:`) et liste des tâches  
-- Stockage dans `memory_store.json` (non versionné)
+- `add: faire les courses`  
+- `done: 1`  
+- `list`  
+- Stockage dans `memory_store.json` (ignoré par Git)
 
 #### 💬 Smalltalk
-- Gestion des salutations simples : bonjour, salut, etc.
+- Gère les salutations simples : bonjour, salut, etc.
 
 ---
 
@@ -45,13 +47,22 @@ Assistant intelligent capable de répondre à des questions à partir de documen
 ```text
 Projet_IA/
 │
-├── app.py                 # Application Streamlit (UI principale)
+├── app.py                 # Application Streamlit (interface principale)
 ├── agents.py              # Outils : calculatrice, météo, web, TODO
-├── router.py              # Détection d’intention (calc / météo / web / rag / smalltalk)
+├── router.py              # Détection d’intention (calc / météo / web / rag / todo)
 ├── rag_core.py            # Moteur RAG (Chroma + embeddings + Ollama)
+├── rag.py                 # API simplifiée pour utiliser le moteur RAG
+├── reindex_once.py        # Script pour réindexer les documents
 │
-├── RAG_Data/              # Dossier contenant les documents internes (cours, PDF, etc.)
+├── RAG_Data/              # Documents internes utilisés par le RAG
 │
 ├── requirements.txt       # Dépendances Python
-├── .gitignore             # Fichiers / dossiers ignorés par Git
-└── README.md              # Documentation du projet
+├── .gitignore             # Exclusions Git
+└── README.md              # Documentation
+
+
+git clone https://github.com/ccolins2010/projet-ia-assistant-rag-academique.git
+cd projet-ia-assistant-rag-academique
+pip install -r requirements.txt
+streamlit run app.py
+
