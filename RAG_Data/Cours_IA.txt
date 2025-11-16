@@ -1,15 +1,327 @@
-### Cours d'Intelligence Artificielle
+### Cours d’Introduction à l’Intelligence Artificielle
 
-L’intelligence artificielle (IA) est un domaine de l’informatique visant à créer des systèmes capables de réaliser des tâches nécessitant normalement l’intelligence humaine.
+> Inspiré de cours universitaires d’IA (Esma Aïmeur, Université de Montréal, et autres sources académiques).
 
-#### Sous-domaines de l'IA :
-- Apprentissage supervisé : apprentissage à partir d'exemples étiquetés.
-- Apprentissage non supervisé : découverte de structures dans les données sans étiquettes.
-- Apprentissage par renforcement : apprentissage par essai-erreur et récompenses.
+---
 
-Les réseaux de neurones sont des modèles essentiels de l'IA moderne. Ils sont composés de couches de neurones artificiels interconnectés, permettant d'apprendre des représentations complexes.
+## 1. Qu’est-ce que l’intelligence artificielle ?
 
-#### Applications :
-- Reconnaissance d’images
-- Traitement automatique du langage naturel
-- Véhicules autonomes
+L’intelligence artificielle (IA) a pour objectif de concevoir des systèmes capables de reproduire, d’imiter ou d’augmenter certaines capacités de l’intelligence humaine, comme :
+
+- raisonner,
+- apprendre,
+- prendre des décisions,
+- comprendre le langage naturel,
+- percevoir le monde (vision, son, etc.).
+
+On peut voir l’IA comme une tentative de **modéliser l’intelligence** au même titre que la physique modélise le monde matériel ou la biologie les êtres vivants.
+
+---
+
+## 2. Le test de Turing
+
+En 1950, Alan Turing propose un test pour répondre à la question :
+> « Les machines peuvent-elles penser ? »
+
+### 2.1 Mise en situation
+
+On considère trois acteurs :
+
+- A : une personne,
+- B : une autre personne,
+- C : un juge humain qui ne voit ni A ni B et communique uniquement par écrit (clavier).
+
+Le but de C est de deviner qui est qui à partir des réponses aux questions qu’il pose.
+
+Pour adapter le test à la machine, on remplace A par un ordinateur :
+- si le juge C se trompe aussi souvent qu’avec un humain,
+- et ne peut pas distinguer la machine de l’humain,
+
+alors on dit que **le comportement de la machine est indiscernable de celui d’un humain**.
+
+Ce test ne prouve pas que la machine « comprend » réellement, mais qu’elle se comporte *comme si* elle pensait.
+
+---
+
+## 3. La chambre chinoise (critique du test de Turing)
+
+En 1980, John Searle propose l’expérience de pensée de la **chambre chinoise**.
+
+### 3.1 Le scénario
+
+- Une personne (Searle) est enfermée dans une pièce.
+- Elle ne connaît pas le chinois.
+- Elle dispose d’un énorme livre de règles en anglais lui indiquant comment répondre à des phrases écrites en chinois.
+
+On lui passe, sous une porte, des phrases en chinois.  
+Elle suit mécaniquement les règles du livre pour produire des réponses… en chinois.
+
+Pour un observateur extérieur, les réponses semblent pertinentes, comme si la personne comprenait le chinois.  
+Mais en réalité, elle **manipule des symboles** sans en comprendre le sens.
+
+### 3.2 Conclusion de Searle
+
+- Une machine peut **simuler** la compréhension sans comprendre réellement.
+- Réussir le test de Turing ne signifie pas forcément qu’il y a une *vraie* intelligence ou une conscience derrière.
+
+---
+
+## 4. Deux grandes approches de l’IA
+
+On peut distinguer deux visions :
+
+1. **Approche “comportementale”**  
+   Une machine est dite intelligente si son comportement est indiscernable de celui d’un humain dans une tâche donnée.  
+   → Exemple : jouer aux échecs mieux qu’un grand maître.
+
+2. **Approche “cognitive”**  
+   Une machine est dite intelligente si elle **modélise le fonctionnement interne** de l’humain (raisonnement, mémoire, stratégies).  
+   → On cherche à comprendre comment l’humain résout un problème, puis à reproduire ce processus.
+
+### Exemple : le jeu d’échecs
+
+- Vision 1 : on programme un moteur qui explore des millions de positions à la seconde (recherche brute, heuristiques puissantes).
+- Vision 2 : on essaie de reproduire les stratégies des joueurs humains (occupation du centre, structures de pions, etc.) et on encode ces connaissances.
+
+---
+
+## 5. Brève histoire de l’IA
+
+### 5.1 Avant 1950 : la préhistoire
+
+- Apparition du mot **robot** dans la pièce *R.U.R.* de Karel Čapek (1923).
+- Premières idées de **traduction automatique** et de manipulation symbolique.
+- Début de la science-fiction sur les robots et IA.
+
+En 1950, Isaac Asimov propose les **trois lois de la robotique** :
+
+1. Un robot ne peut pas porter atteinte à un être humain.
+2. Un robot doit obéir aux ordres, sauf s’ils contredisent la première loi.
+3. Un robot doit protéger sa propre existence, sauf si cela contredit les deux premières lois.
+
+---
+
+### 5.2 1955–1970 : les débuts et l’enthousiasme
+
+- 1956 : conférence de Dartmouth (Minsky, McCarthy, Newell, Simon). Le terme **“Artificial Intelligence”** est officiellement utilisé.
+- Développement des premiers programmes :
+  - **Logic Theorist** (démonstration de théorèmes),
+  - premiers programmes de jeux (échecs, dames),
+  - langages **LISP** (McCarthy, 1960) et plus tard **Prolog** (Colmerauer, 1971).
+- 1965 : **ELIZA**, un programme qui simule un psychothérapeute en langage naturel.  
+  Il crée l’illusion d’une vraie conversation, alors qu’il n’a aucune compréhension profonde.
+
+---
+
+### 5.3 1970–1980 : spécialisation et théorisation
+
+- Développement de systèmes qui manipulent des **blocs**, des objets géométriques, etc.  
+  Exemple : **SHRDLU** (Winograd, 1970) qui “comprend” des ordres en langage naturel dans un monde de blocs.
+- Les recherches se structurent autour de sous-domaines :
+  - traitement du langage naturel,
+  - représentation des connaissances,
+  - planification,
+  - robotique, etc.
+
+---
+
+### 5.4 1980–1990 : les systèmes experts et la reconnaissance
+
+- Popularité des **systèmes experts** dans l’industrie (diagnostic médical, géologie, finance, configuration de matériels).
+- Exemples célèbres :
+  - **MYCIN** (diagnostic médical),
+  - **DENDRAL** (analyse chimique),
+  - systèmes de compréhension de la parole.
+- Le Japon lance un projet ambitieux de “cinquième génération” d’ordinateurs.
+
+---
+
+### 5.5 1990–2000 : Internet, data mining et IA distribuée
+
+- Explosion d’Internet → masses de données à explorer.
+- Développement de :
+  - **data mining** (fouille de données),
+  - moteurs de recherche intelligents,
+  - systèmes d’indexation et de recommandation.
+
+Exemples marquants :
+
+- 1997 : **Deep Blue** (IBM) bat Garry Kasparov, champion du monde d’échecs.
+- 1997 : première **RoboCup**, compétition de robots jouant au football.
+- Missions autonomes de véhicules et de robots (ex. conduite autonome expérimentale).
+
+---
+
+### 5.6 Années 2000 et après : IA partout
+
+- Développement d’**ontologies** (UMLS en médecine, WordNet, etc.).
+- Progrès en :
+  - traitement du langage naturel,
+  - systèmes de recommandation (films, livres, produits),
+  - analyse de documents (reconnaissance d’écriture, signatures, etc.),
+  - captchas pour distinguer humains et bots,
+  - robotique sociale (robots humanoïdes, robots d’assistance).
+
+Aujourd’hui, l’IA est présente dans :
+- les moteurs de recherche,
+- les réseaux sociaux,
+- les assistants vocaux,
+- les voitures autonomes,
+- les systèmes de recommandation,
+- les smartphones, etc.
+
+---
+
+## 6. Domaines d’application de l’IA
+
+Quelques domaines classiques d’application :
+
+- **Diagnostic** : médical, industriel, surveillance de systèmes.
+- **Robotique** : robots mobiles, bras manipulateurs, drones.
+- **Vision par ordinateur** : reconnaissance d’objets, suivi de mouvements, vidéosurveillance.
+- **Traitement du langage naturel** : chatbots, traduction, résumés automatiques.
+- **Reconnaissance de formes** : reconnaissance de la parole, lecture optique de caractères, reconnaissance faciale.
+- **Planification** : planification de tâches, horaires, routes.
+- **Jeux vidéo** : adversaires intelligents, IA de stratégie.
+- **E-learning** : systèmes tutoriels intelligents et adaptation au profil de l’apprenant.
+- **Systèmes de recommandation** : films, musique, achats en ligne.
+
+---
+
+## 7. Grands domaines de recherche en IA
+
+### 7.1 Apprentissage automatique (machine learning)
+
+- Donne à un système la capacité d’améliorer ses performances avec l’expérience.
+- Deux grands types :
+  - **Apprentissage analytique** : reformuler des connaissances existantes pour les rendre plus efficaces.
+  - **Apprentissage synthétique** : découvrir des connaissances nouvelles (patterns cachés).
+
+### 7.2 Réalité virtuelle et interaction homme-machine
+
+- Simulation d’environnements immersifs (3D, casque, gants, etc.).
+- Applications :
+  - thérapie de phobies,
+  - formation,
+  - simulateurs (vol, chirurgie).
+
+### 7.3 Reconnaissance des formes
+
+- Automatise la reconnaissance de situations typiques à partir de données perceptives (images, sons, signaux).
+- Applications :
+  - vision par ordinateur,
+  - reconnaissance de la parole,
+  - lecture optique de documents.
+
+### 7.4 Vie artificielle
+
+- Étudie et simule des systèmes inspirés du vivant :
+  - populations,
+  - écosystèmes,
+  - colonies d’insectes,
+  - comportements collectifs.
+
+### 7.5 Robotique
+
+- Interconnexion de :
+  - la perception,
+  - la prise de décision,
+  - l’action.
+- Permet à des robots de :
+  - se repérer,
+  - manipuler des objets,
+  - interagir avec des humains.
+
+### 7.6 Indexation multimédia et data mining
+
+- Fouille et organisation de grandes bases de données multimédia (texte, image, vidéo).
+- Objectif : extraire des connaissances utiles, repérer des anomalies, aider à décision.
+
+---
+
+## 8. Systèmes experts et représentation des connaissances
+
+### 8.1 Systèmes à base de connaissances
+
+Un **système expert** est un programme qui utilise des connaissances d’expert pour résoudre des problèmes complexes.
+
+Composants typiques :
+
+- **Base de connaissances** : faits + règles.
+- **Base de faits** : informations sur le cas à traiter.
+- **Moteur d’inférences** : applique les règles aux faits pour déduire de nouvelles informations ou décisions.
+- **Interface utilisateur** : dialogue avec l’utilisateur.
+
+### 8.2 Catégories de systèmes experts
+
+- **Interprétation** : expliquer des données (ex. interprétation d’analyses).
+- **Prédiction** : prévoir des valeurs ou des événements.
+- **Diagnostic** : identifier la cause d’une panne ou d’une maladie.
+- **Planification** : proposer un plan d’actions.
+- **Conception** : configurer un système selon des contraintes.
+- **Surveillance et contrôle** : superviser des installations.
+- **Formation** : aider à l’apprentissage (tutoriels intelligents).
+
+---
+
+## 9. Types de raisonnement en IA
+
+On s’intéresse à différents schémas de raisonnement :
+
+- **Raisonnement formel** : logique, règles, preuves.
+- **Raisonnement procédural** : algorithmes, automates, enchaînement d’actions.
+- **Raisonnement par analogie** : résoudre un problème en s’inspirant d’un cas similaire (raisonnement à partir de cas).
+- **Raisonnement par généralisation** : induction à partir d’exemples.
+- **Raisonnement géométrique** : raisonnement sur des formes, des objets dans l’espace (vision, robotique).
+
+Exemple : le **raisonnement à partir de cas (CBR)** :
+1. On cherche dans une base de cas un problème similaire.
+2. On adapte la solution de ce cas au nouveau problème.
+3. On met à jour la base de cas avec cette nouvelle expérience.
+
+---
+
+## 10. Acquisition des connaissances
+
+Construire un système intelligent nécessite de **capturer et structurer la connaissance** :
+
+- Connaissances déclaratives : “savoir que…”  
+  (ex. “La Terre tourne autour du Soleil.”)
+- Connaissances procédurales : “savoir faire…”  
+  (ex. recette de cuisine, méthode de diagnostic).
+- Connaissances conceptuelles : liées à des concepts (référendum, démocratie, etc.).
+
+Difficultés :
+
+- connaissances souvent **implicites** chez l’expert,
+- subjectivité,
+- redondance, ambiguïté,
+- données incomplètes ou imprécises.
+
+---
+
+## 11. Perspectives futures
+
+Parmi les grands axes pour le futur :
+
+- **Agents intelligents** capables de coopérer, négocier, prendre des décisions en groupe.
+- **Vie artificielle** et simulations d’écosystèmes.
+- **Data mining** et aide à la décision sur de très grandes bases de données.
+- **E-learning** et personnalisation de l’éducation.
+- **Commerce électronique et recommandation** toujours plus fines.
+- **Réalité virtuelle et réalité augmentée** de plus en plus immersives.
+- **Web sémantique** et services intelligents.
+
+---
+
+## 12. Conclusion
+
+Nous sommes encore loin de certains scénarios extrêmes de la science-fiction (robots dominants, apocalypse des machines).  
+Le but principal de l’IA est plutôt de **compléter l’humain**, de l’aider à :
+
+- automatiser des tâches répétitives,
+- analyser des quantités énormes de données,
+- prendre de meilleures décisions,
+- se concentrer sur des activités plus créatives et plus agréables.
+
+L’IA n’est ni magique, ni neutre : c’est un ensemble de techniques puissantes qu’il faut comprendre, maîtriser et utiliser avec responsabilité.

@@ -1,18 +1,224 @@
 ### Cours d’Introduction à Python
 
+> Support de cours d’introduction à la programmation en Python.
+
+---
+
+## 1. Qu’est-ce que Python ?
+
 Python est un langage de programmation interprété, simple et polyvalent.  
-Il est largement utilisé pour l’analyse de données, l’intelligence artificielle et le développement web.
+Il est :
 
-#### Structures de base :
-- Variables : `x = 5`
-- Listes : `[1, 2, 3]`
-- Boucles : `for i in range(5):`
-- Fonctions : `def addition(a, b): return a + b`
+- lisible (syntaxe proche du langage naturel),
+- multiplateforme (Windows, Linux, macOS),
+- très utilisé en :
+  - analyse de données,
+  - intelligence artificielle et machine learning,
+  - développement web,
+  - scripts système,
+  - automatisation.
 
-#### Bibliothèques populaires :
-- NumPy : calcul scientifique
-- Pandas : manipulation de données
-- Matplotlib : visualisation
-- Scikit-learn : machine learning
+Python met l’accent sur la clarté du code et la productivité du développeur.
 
-Python est apprécié pour sa syntaxe claire et son large écosystème de bibliothèques.
+---
+
+## 2. Variables et types de base
+
+### 2.1 Variables
+
+Une variable est un nom qui référence une valeur en mémoire.  
+On crée une variable simplement avec l’opérateur "=" :
+
+x = 5
+nom = "Alice"
+pi = 3.14
+
+Le type est déduit automatiquement.
+
+### 2.2 Types de base
+
+- int : entier
+- float : réel
+- bool : booléen
+- str : chaîne de caractères
+
+Exemples :
+
+age = 27
+temperature = 19.5
+est_etudiant = True
+message = "Hello, Python !"
+
+---
+
+## 3. Opérateurs
+
+### 3.1 Opérateurs arithmétiques
+
++  addition  
+-  soustraction  
+*  multiplication  
+/  division réelle  
+// division entière  
+%  modulo  
+** puissance  
+
+a = 10
+b = 3
+a + b
+a / b
+a ** 4
+
+### 3.2 Comparaisons
+
+==  égal  
+!=  différent  
+<, >, <=, >=  
+
+### 3.3 Logiques
+
+and, or, not
+
+---
+
+## 4. Chaînes de caractères (str)
+
+nom = "Alice"
+phrase = 'Bonjour'
+
+Concaténation :
+
+identite = "Alice " + "Durand"
+
+Répétition :
+
+"ha" * 3
+
+Indexation :
+
+texte = "Python"
+texte[0]     # P
+texte[1:4]   # yth
+
+---
+
+## 5. Listes, tuples, dictionnaires
+
+### 5.1 Listes
+
+notes = [12, 15, 9]
+notes.append(20)
+
+### 5.2 Tuples
+
+coord = (10, 20)
+
+### 5.3 Dictionnaires
+
+etudiant = {
+    "nom": "Alice",
+    "age": 21,
+    "moyenne": 14.5
+}
+
+---
+
+## 6. Structures de contrôle
+
+### 6.1 Conditions
+
+age = 20
+if age < 18:
+    print("Mineur")
+elif age == 18:
+    print("Tout juste majeur")
+else:
+    print("Majeur")
+
+### 6.2 Boucles for
+
+for i in range(5):
+    print(i)
+
+### 6.3 Boucle while
+
+compteur = 0
+while compteur < 3:
+    print(compteur)
+    compteur += 1
+
+---
+
+## 7. Fonctions
+
+def addition(a, b):
+    return a + b
+
+resultat = addition(3, 5)
+
+### Paramètre par défaut
+
+def saluer(prenom, message="Bonjour"):
+    print(message, prenom)
+
+---
+
+## 8. Modules
+
+### 8.1 Import standard
+
+import math
+math.sqrt(16)
+math.pi
+
+### 8.2 Import sélectif
+
+from math import sin, cos
+
+### 8.3 Module perso
+
+# utils.py
+def carre(x):
+    return x * x
+
+import utils
+utils.carre(5)
+
+---
+
+## 9. Exceptions
+
+try:
+    x = int(input("Entrez un nombre : "))
+    print(x)
+except ValueError:
+    print("Vous devez entrer un entier.")
+
+---
+
+## 10. Gestion de fichiers
+
+### 10.1 Lecture
+
+with open("donnees.txt", "r") as f:
+    contenu = f.read()
+
+### 10.2 Écriture
+
+with open("sortie.txt", "w") as f:
+    f.write("Bonjour Python")
+
+---
+
+## 11. Bibliothèques populaires
+
+- NumPy : calcul scientifique  
+- Pandas : analyse et manipulation de données  
+- Matplotlib : visualisation  
+- Scikit-learn : machine learning  
+
+Python doit sa popularité à la simplicité du langage et à la richesse de son écosystème.
+
+---
+
+FIN DU COURS PYTHON

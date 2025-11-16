@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 """
-agents.py
----------
-Outils/agents utilisés par l'app :
+agents.py — Outils officiels de l’assistant
+------------------------------------------
 
-- Calculatrice sécurisée (via AST, sans eval)
-- Météo (Nominatim + Open-Meteo, avec fallback local)
-- Recherche web (DuckDuckGo via ddgs)
-- TODO persistant sur disque (JSON)
+• tool_calculator     : Calculatrice sécurisée (AST)
+                        - sin45, sin 45°, sin(45deg)
+                        - sqrt16, log100, exp2, 2^3, 5², 3³, etc.
+                        - log(x) est interprété comme log10(x)
 
-Compatible Python 3.10
+• tool_weather        : Météo mondiale via wttr.in (Rouen, Nantes, London, Brazil, etc.)
+• tool_weather_sync   : Version synchrone pour Streamlit
+• tool_web_search     : Recherche DuckDuckGo (ddgs)
+• tool_todo           : To-do list persistante (JSON)
+                        - ajoute ...
+                        - termine X
+                        - liste
+                        - vide tout (reset)
+
+Toutes les fonctions renvoient du TEXTE prêt à afficher dans app.py.
 """
 
 import ast
@@ -22,110 +30,133 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
 import httpx
-from ddgs import DDGS  # pip install ddgs
+from ddgs import DDGS
 
 
-# =====================================================================
-#  Helpers NLU / Normalisation
-# =====================================================================
-# Ces helpers servent à nettoyer/normaliser le texte libre
-# avant de le passer aux vrais outils.
+# ╔═══════════════════════════════════════════╗
+# ║           1. CALCULATRICE (AST)           ║
+# ╚═══════════════════════════════════════════╝
+
+# On autorise seulement un sous-ensemble sûr de Python
+_ALLOWED_OPS = {
+    ast.Add: op.add,
+    ast.Sub: op.sub,
+    ast.Mult: op.mul,
+    ast.Div: op.truediv,
+    ast.Pow: op.pow,
+    ast.USub: op.neg,
+}
+
+# ⚠️ CHOIX IMPORTANT :
+#   - "log" = log10 (logarithme base 10)
+#   - "log10" = idem (pour être explicite)
+_ALLOWED_FUNCS = {
+    "sqrt": math.sqrt,
+    "sin": math.sin,
+    "cos": math.cos,
+    "tan": math.tan,
+    "log": math.log10,     # on interprète "log" comme log10
+    "log10": math.log10,
+    "exp": math.exp,
+}
+
+_ALLOWED_CONSTS = {
+    "pi": math.pi,
+    "e": math.e,
+}
 
 
-# ---------------------------------------------------------------------
-# 1) Calculatrice : extraction/normalisation d'expressions math
-# ---------------------------------------------------------------------
+def _eval_ast(node: ast.AST) -> float:
+    """Évalue récursivement un AST mathématique limité et sécurisé."""
 
-# Fonctions autorisées dans les expressions
-_MATH_FUNC = r"(sqrt|sin|cos|tan|log10|log|exp)"
+    # Constantes (pi, e…)
+    if isinstance(node, ast.Name):
+        if node.id in _ALLOWED_CONSTS:
+            return float(_ALLOWED_CONSTS[node.id])
+        raise ValueError(f"Symbole non autorisé : {node.id}")
 
-# Expression math autorisée :
-# - chiffres
-# - espaces
-# - opérateurs + - * / ( ) . , ^ et symboles ° ² ³
+    # Nombres (Python 3.8+)
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, (int, float)):
+            return float(node.value)
+        raise ValueError("Constante non numérique")
+
+    # Opérateurs unaires (ex : -x)
+    if isinstance(node, ast.UnaryOp):
+        return _ALLOWED_OPS[type(node.op)](_eval_ast(node.operand))
+
+    # Opérateurs binaires (x + y, x * y, etc.)
+    if isinstance(node, ast.BinOp):
+        return _ALLOWED_OPS[type(node.op)](
+            _eval_ast(node.left),
+            _eval_ast(node.right),
+        )
+
+    # Appels de fonctions autorisées (sqrt, sin, log10…)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        fname = node.func.id
+        if fname not in _ALLOWED_FUNCS:
+            raise ValueError(f"Fonction non autorisée : {fname}")
+        args = [_eval_ast(a) for a in node.args]
+        return float(_ALLOWED_FUNCS[fname](*args))
+
+    raise ValueError("Expression invalide (AST)")
+
+
+# ─────────────────────────────
+# Extraction / normalisation
+# ─────────────────────────────
+
 _MATH_EXPR_RE = re.compile(
-    rf"(?:{_MATH_FUNC}|\d|\s|[+\-*/().,^°²³])+",
+    r"(?:sqrt|sin|cos|tan|log10|log|exp|\d|[+\-*/().,^°²³ ]+)+",
     re.I,
 )
 
 
 def _extract_math_expr(text: str) -> str:
     """
-    Extrait et normalise une expression math à partir d'un texte libre.
+    Extrait et normalise une expression mathématique à partir d'une phrase.
 
-    Normalisations :
-      - virgules → points (2,5 → 2.5)
-      - ^ → ** (2^3 → 2**3)
-      - ×, ·, ÷, −, –, — → *, /, -
-      - ² / ³ → puissances
-      - sin45, cos30, tan60 → sin(radians)
-      - sqrt16, log10 100, exp2 → sqrt(16), log10(100), exp(2)
-      - sin 45° / sin(45deg) → conversion degrés → radians
-      - équilibrage simple des parenthèses
-
-    Si rien de mathématique n'est détecté, retourne "".
+    Gère :
+    - opérateurs unicode → ASCII
+    - '2^3' → '2**3'
+    - '5²' → '5**2', '3³' → '3**3'
+    - 'sin45' / 'sin 45' / 'sin 45°' / 'sin(45deg)' → sin(radians(45))
+    - 'sqrt16' / 'sqrt 16' → 'sqrt(16)'
+    - 'log100' / 'log 100' → 'log(100)' (et "log" = log10)
+    - 'exp2' / 'exp 2' → 'exp(2)'
     """
+
     if not text:
         return ""
 
     raw = text.strip()
 
-    # 1) Première tentative : on prend le premier bloc "math"
-    m = _MATH_EXPR_RE.search(raw)
-    expr = (m.group(0) if m else raw).strip()
-
-    # 2) Si on a récupéré du vide, on cherche le premier vrai token math
-    if not expr:
-        m2 = re.search(r"(sqrt|sin|cos|tan|log10|log|exp|\d)", raw, flags=re.I)
-        if m2:
-            expr = raw[m2.start():].strip()
-        else:
-            return ""
-
-    # 3) Normalisations basiques
-    expr = expr.replace(",", ".")   # 2,5 -> 2.5
-    expr = expr.replace("^", "**")  # 2^3 -> 2**3
-
-    # 3-bis) Opérateurs Unicode → ASCII (copier/coller depuis Word, etc.)
-    expr = (
-        expr
-        .replace("×", "*")
-        .replace("∙", "*")
-        .replace("·", "*")
+    # Normalisation des opérateurs unicode
+    raw = (
+        raw.replace("×", "*")
         .replace("÷", "/")
         .replace("−", "-")
         .replace("–", "-")
         .replace("—", "-")
     )
 
-    # 3-ter) Équilibrage simple des parenthèses
-    def _balance_parentheses(s: str) -> str:
-        open_count = 0
-        out: List[str] = []
-        for ch in s:
-            if ch == "(":
-                open_count += 1
-                out.append(ch)
-            elif ch == ")":
-                if open_count > 0:
-                    open_count -= 1
-                    out.append(ch)
-                # sinon : parenthèse fermante en trop → on l'ignore
-            else:
-                out.append(ch)
-        # on ferme les parenthèses restantes à la fin
-        return "".join(out) + (")" * open_count)
+    # Premier essai : zone "math" dans le texte
+    m = _MATH_EXPR_RE.search(raw)
+    expr = m.group(0).strip() if m else raw
 
-    expr = _balance_parentheses(expr)
+    # Normalisations de base
+    expr = expr.replace(",", ".")
+    expr = expr.replace("^", "**")
 
-    # 4) Puissances avec ² / ³
+    # Puissances ² / ³
     expr = re.sub(r"(\d+)\s*²", r"\1**2", expr)
     expr = re.sub(r"(\d+)\s*³", r"\1**3", expr)
 
-    # 5) Cas "sin45", "cos30", "tan60" → sin(radians)
-    def _inline_deg(mf: re.Match) -> str:
-        func = mf.group(1).lower()
-        val = float(mf.group(2))
+    # sin45 / cos30 / tan60 (sans ° explicitement) → interprétation en DEGRÉS
+    def _inline_deg(match: re.Match) -> str:
+        func = match.group(1).lower()
+        val = float(match.group(2))
         rad = val * math.pi / 180.0
         return f"{func}({rad})"
 
@@ -136,365 +167,159 @@ def _extract_math_expr(text: str) -> str:
         flags=re.I,
     )
 
-    # 6) Cas "sqrt16", "sqrt 16", "log10 100", "exp2" → on ajoute les ()
-    expr = re.sub(
-        r"\b(sqrt|log10|log|exp)\s*([0-9]+(?:\.[0-9]+)?)\b",
-        r"\1(\2)",
-        expr,
-        flags=re.I,
-    )
-
-    # 7) Cas sin'45  → sin(45)
-    expr = re.sub(
-        r"\b(sin|cos|tan)\s*'\s*([0-9]+(?:\.[0-9]+)?)\b",
-        r"\1(\2)",
-        expr,
-        flags=re.I,
-    )
-
-    # 8) Cas sin 45° / sin 45deg → sin(45°/deg)
-    expr = re.sub(
-        r"\b(sin|cos|tan)\s+([0-9]+(?:\.[0-9]+)?)\s*°",
-        r"\1(\2°)",
-        expr,
-        flags=re.I,
-    )
-    expr = re.sub(
-        r"\b(sin|cos|tan)\s+([0-9]+(?:\.[0-9]+)?)\s*deg\b",
-        r"\1(\2deg)",
-        expr,
-        flags=re.I,
-    )
-
-    # 9) Conversion sin(45°) / sin(45deg) -> sin(radians)
-    def _deg_to_rad(mf: re.Match) -> str:
-        func = mf.group(1)
-        inside = mf.group(2)
-        m_deg = re.match(
-            r"\s*([0-9]+(?:\.[0-9]+)?)\s*(°|deg)\s*$",
-            inside,
-            flags=re.I,
-        )
-        if not m_deg:
-            return f"{func}({inside})"
-        val = float(m_deg.group(1))
-        rad = val * math.pi / 180.0
+    # Gestion des notations avec ° ou "deg" EXPLICITES
+    # sin 45° / sin(45deg)
+    def _deg_token_to_rad(match: re.Match) -> str:
+        func = match.group(1)
+        number = float(match.group(2))
+        rad = number * math.pi / 180.0
         return f"{func}({rad})"
 
     expr = re.sub(
-        r"\b(sin|cos|tan)\s*\(\s*([^)]+)\s*\)",
-        _deg_to_rad,
+        r"\b(sin|cos|tan)\s+([0-9]+(?:\.[0-9]+)?)\s*°\b",
+        _deg_token_to_rad,
         expr,
         flags=re.I,
     )
+    expr = re.sub(
+        r"\b(sin|cos|tan)\s*\(\s*([0-9]+(?:\.[0-9]+)?)\s*deg\s*\)",
+        _deg_token_to_rad,
+        expr,
+        flags=re.I,
+    )
+
+    # sqrt16 / log100 / exp2 → ajout de parenthèses
+    # ⚠️ IMPORTANT :
+    # On place "log" AVANT "log10" dans l'alternative pour éviter que
+    # "log100" soit interprété comme "log10(0)".
+    # Exemple sans cette précaution :
+    #   - regex voit "log10" dans "log100" → groupe1="log10", groupe2="0"
+    #   - devient "log10(0)" → math domain error
+    #
+    # Avec cet ordre ("log" d'abord) :
+    #   - "log100" → groupe1="log", groupe2="100" → "log(100)" ✅
+    expr = re.sub(
+        r"\b(sqrt|log|log10|exp)\s*([0-9]+(?:\.[0-9]+)?)\b",
+        r"\1(\2)",
+        expr,
+        flags=re.I,
+    )
+
+    # ⚠️ IMPORTANT :
+    # On NE fait PAS de remplacement du type "log(\d+) → log10(...)". 
+    # Ça évite les horreurs du style "log10(10)(0)".
 
     return expr
 
 
-# ---------------------------------------------------------------------
-# 2) Météo : normalisation d’une ville dans un texte libre
-# ---------------------------------------------------------------------
+def tool_calculator(text: str) -> str:
+    """Outil CALCUL — renvoie une réponse prête à afficher."""
 
-_STOPWORDS_CITY = {
-    "aujourd'hui", "auj", "demain", "stp", "svp", "merci",
-    "s'il", "te", "plaît", "plait", "moi", "please", "today",
-    "meteo", "météo", "quelle", "est", "la", "le", "de", "du",
-    "a", "à", "pour", "il", "fait", "temps", "donne", "donner", "donnes",
-    "au",  # pour éviter "Au Brazil" -> on garde "Brazil"
+    expr = _extract_math_expr(text)
+
+    if not expr:
+        return "Expression reconnue: (vide)\nRésultat: Erreur — expression vide"
+
+    try:
+        node = ast.parse(expr, mode="eval").body
+        val = _eval_ast(node)
+
+        if abs(val - int(val)) < 1e-12:
+            result = int(val)
+        else:
+            # limiter les décimales pour un rendu propre
+            result = float(f"{val:.10f}".rstrip("0").rstrip("."))
+
+        return f"Expression reconnue: `{expr}`\nRésultat: **{result}**"
+
+    except Exception as e:
+        return f"Expression reconnue: `{expr}`\nRésultat: Erreur calcul: {e}"
+
+
+# ╔═══════════════════════════════════════════╗
+# ║     2. MÉTÉO MONDIALE (wttr.in)          ║
+# ╚═══════════════════════════════════════════╝
+
+# On garde quelques presets au cas où, mais wttr.in gère déjà très bien
+_CITY_PRESET = {
+    "paris": "Paris",
+    "lyon": "Lyon",
+    "marseille": "Marseille",
+    "reims": "Reims",
 }
 
 
 def _normalize_city_free_text(raw: str) -> str:
     """
     Exemples :
-      "quelle est la météo à Paris aujourd'hui ?" → "Paris"
-      "météo pour lyon stp"                        → "Lyon"
-      "la meteo au Brazil"                         → "Brazil"
-
-    Si aucune ville claire n'est trouvée, retourne "Paris".
+      "meteo rouen"        → "Rouen"
+      "la météo à nantes"  → "Nantes"
+      "meteo brazil"       → "Brazil"
+      "meteo londre"       → "Londre" (wttr.in gère assez bien)
     """
     if not raw:
         return "Paris"
 
     text = raw.strip()
 
-    # On essaie de récupérer ce qui vient après "à", "a", "pour" ou "au"
-    m = re.search(r"(?:\bà|\ba|\bpour|\bau)\s+([a-zA-ZÀ-ÖØ-öø-ÿ' -]{2,})", text, re.I)
-    candidate = m.group(1) if m else text
+    tokens = re.findall(r"[a-zA-ZÀ-ÖØ-öø-ÿ']+", text)
+    stop = {
+        "meteo", "météo", "la", "le", "les", "du", "de", "des",
+        "a", "à", "au", "aux", "pour", "stp", "svp", "il", "fait",
+        "quelle", "quel", "donne", "donner",
+    }
 
-    # On coupe aux ponctuations fortes
-    candidate = re.split(r"[?,!.;:()\[\]\{\}\n\r]", candidate)[0]
+    filtered = [t for t in tokens if t.lower() not in stop]
 
-    # On enlève les mots parasites ("meteo", "aujourd'hui", etc.)
-    tokens = [
-        t for t in re.findall(r"[a-zA-ZÀ-ÖØ-öø-ÿ']{2,}", candidate)
-        if t.lower() not in _STOPWORDS_CITY
-    ]
-
-    if not tokens:
+    if not filtered:
         return "Paris"
 
-    return " ".join(tokens).strip().title()
-
-
-# ---------------------------------------------------------------------
-# 3) Web : nettoyage requête DuckDuckGo
-# ---------------------------------------------------------------------
-
-def _clean_web_query(text: str) -> str:
-    """
-    Nettoie une requête web de type :
-      - "recherche: ..."
-      - "cherche sur le web ..."
-      - "internet ..."
-    """
-    if not text:
-        return ""
-    cleaned = re.sub(
-        r"^\s*(recherche|cherche( sur (le )?web)?|internet|google)\s*:?\s*",
-        "",
-        text,
-        flags=re.I,
-    )
-    return cleaned.strip() or text.strip()
-
-
-# ---------------------------------------------------------------------
-# 4) TODO : passage texte NL → commande canonique
-# ---------------------------------------------------------------------
-
-def _normalize_todo_command(text: str) -> str:
-    """
-    Map en commandes simples :
-      - "ajoute …" / "add: …"  →  "add: <texte>"
-      - "termine 2" / "done: 2"→  "done: 2"
-      - "liste" / "list"       →  "list"
-    """
-    t = (text or "").strip()
-
-    # Ajout de tâche
-    if re.search(r"\b(ajoute|ajouter|add)\b", t, re.I):
-        m = re.search(r"(?:ajoute|ajouter|add)\s*:?\s*(.*)", t, re.I)
-        payload = (m.group(1) if m else "").strip()
-        return f"add: {payload}" if payload else "list"
-
-    # Terminer une tâche (par numéro)
-    if re.search(r"\b(termine|finis|done)\b", t, re.I):
-        m = re.search(r"(?:termine|finis|done)\s*:?\s*(\d+)", t, re.I)
-        return f"done: {m.group(1)}" if m else "list"
-
-    # Lister les tâches
-    if re.search(r"\b(liste|list)\b", t, re.I):
-        return "list"
-
-    # Sinon on laisse tel quel (permet le debug)
-    return t
-
-
-# =====================================================================
-#  Calculatrice sécurisée (AST)
-# =====================================================================
-
-# Opérateurs autorisés
-_ALLOWED_OPS = {
-    ast.Add: op.add,
-    ast.Sub: op.sub,
-    ast.Mult: op.mul,
-    ast.Div: op.truediv,
-    ast.Pow: op.pow,
-    ast.Mod: op.mod,
-    ast.USub: op.neg,
-}
-
-# Fonctions de math autorisées
-_ALLOWED_FUNCS = {
-    "sqrt": math.sqrt,
-    "sin": math.sin,
-    "cos": math.cos,
-    "tan": math.tan,
-    "log": math.log,      # ln
-    "log10": math.log10,
-    "exp": math.exp,
-}
-
-# Constantes autorisées
-_ALLOWED_CONSTS = {
-    "pi": math.pi,
-    "e": math.e,
-}
-
-
-def _eval_ast(node: ast.AST) -> float:
-    """
-    Évalue récursivement l’AST d’une expression mathématique restreinte.
-    Empêche tout appel/accès non autorisé (sécurité).
-    """
-
-    # Constantes (pi, e, …)
-    if isinstance(node, ast.Name):
-        if node.id in _ALLOWED_CONSTS:
-            return float(_ALLOWED_CONSTS[node.id])
-        raise ValueError(f"symbole non autorisé: {node.id}")
-
-    # Nombres
-    if hasattr(ast, "Num") and isinstance(node, ast.Num):
-        return float(node.n)  # type: ignore[attr-defined]
-    if isinstance(node, ast.Constant):
-        if isinstance(node.value, (int, float)):
-            return float(node.value)
-        raise ValueError("constante non numérique")
-
-    # Opérations unaires / binaires
-    if isinstance(node, ast.UnaryOp):
-        return _ALLOWED_OPS[type(node.op)](_eval_ast(node.operand))
-    if isinstance(node, ast.BinOp):
-        return _ALLOWED_OPS[type(node.op)](_eval_ast(node.left), _eval_ast(node.right))
-
-    # Appels de fonctions autorisées
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-        func = node.func.id
-        if func not in _ALLOWED_FUNCS:
-            raise ValueError(f"fonction non autorisée: {func}")
-        args = [_eval_ast(a) for a in node.args]
-        return float(_ALLOWED_FUNCS[func](*args))
-
-    raise ValueError("expression invalide")
-
-
-def tool_calculator(expr: str) -> str:
-    """
-    Évalue une expression mathématique contenue dans un texte naturel.
-    Retourne un bloc texte prêt pour l'affichage (markdown).
-
-    Exemple :
-      "calcul moi (145 + 268) × 3 – 42"
-        → Expression reconnue: `(145 + 268) * 3 - 42`
-        → Résultat: **949**
-    """
-    try:
-        normalized = _extract_math_expr(expr)
-        if not normalized:
-            return (
-                "🛠️ Calculatrice\n\n"
-                "Expression reconnue: *vide*\n"
-                "Résultat: Erreur calcul: expression vide"
-            )
-
-        node = ast.parse(normalized, mode="eval").body
-        val = _eval_ast(node)
-
-        # Si le résultat est très proche d'un entier, on l'affiche comme entier
-        if abs(val - int(val)) < 1e-12:
-            result = str(int(val))
-        else:
-            # On limite à 10 décimales pour éviter des trucs comme 0.7853981633974483
-            result = f"{val:.10f}".rstrip("0").rstrip(".")
-
-        return (
-            "🛠️ Calculatrice\n\n"
-            f"Expression reconnue: `{normalized}`\n"
-            f"Résultat: **{result}**"
-        )
-    except Exception as e:
-        return (
-            "🛠️ Calculatrice\n\n"
-            f"Expression reconnue: `{_extract_math_expr(expr)}`\n"
-            f"Résultat: Erreur calcul: {e}"
-        )
-
-
-# =====================================================================
-#  Météo (Open-Meteo) + Nominatim
-# =====================================================================
-
-# Quelques villes en dur, au cas où le géocodage web échoue
-_CITY_PRESET: Dict[str, Tuple[float, float]] = {
-    "paris": (48.8566, 2.3522),
-    "lyon": (45.7640, 4.8357),
-    "marseille": (43.2965, 5.3698),
-    "evry": (48.6239, 2.4289),
-    "rennes": (48.1173, -1.6778),
-}
-
-
-async def _geocode_city(city: str) -> Optional[Tuple[float, float]]:
-    """
-    Géocodage via Nominatim (OpenStreetMap).
-    Retourne (lat, lon) ou None en cas d'erreur ou d'absence de résultat.
-    """
-    url = "https://nominatim.openstreetmap.org/search"
-    params = {"q": city, "format": "json", "limit": 1}
-    headers = {"User-Agent": "RAG-Academique/1.0 (education use)"}
-    try:
-        async with httpx.AsyncClient(timeout=15, headers=headers) as client:
-            r = await client.get(url, params=params)
-            r.raise_for_status()
-            data = r.json()
-            if not data:
-                return None
-            return float(data[0]["lat"]), float(data[0]["lon"])
-    except Exception:
-        return None
+    city = " ".join(filtered).strip()
+    return city.title()
 
 
 async def tool_weather(city: str = "Paris") -> str:
     """
-    Donne la météo courante via Open-Meteo.
-
-    Étapes :
-      1. Normalisation de la ville (texte libre → "Paris", "Lyon", "Brazil"...).
-      2. Géocodage via Nominatim (internet).
-      3. Si le géocodage échoue → fallback sur _CITY_PRESET.
+    Météo via wttr.in (fonctionne pour la plupart des villes / pays du monde).
+    - Gère les phrases complètes : "meteo rouen", "la météo à nantes", etc.
+    - Retourne : Ville, Température, Vent.
     """
     normalized = _normalize_city_free_text(city)
-    city_key = normalized.lower()
 
-    # 1) Géocodage web prioritaire
-    coords = await _geocode_city(normalized)
+    # Petit fallback sur le preset (corrige quelques variantes)
+    preset = _CITY_PRESET.get(normalized.lower())
+    target = preset or normalized
 
-    # 2) Fallback sur les presets locaux
-    if not coords:
-        coords = _CITY_PRESET.get(city_key)
-
-    if not coords:
-        return (
-            "Météo indisponible: ville introuvable ou service de géocodage indisponible.\n"
-            "Essaie une autre orthographe ou une grande ville (Paris, Lyon, Marseille...)."
-        )
-
-    lat, lon = coords
-    url = "https://api.open-meteo.com/v1/forecast"
-    params = {"latitude": lat, "longitude": lon, "current_weather": True}
+    url = f"https://wttr.in/{target}"
+    params = {"format": "j1", "lang": "fr"}
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.get(url, params=params)
             r.raise_for_status()
-            cw = r.json().get("current_weather") or {}
-            if not cw:
-                return "Météo indisponible pour cette position."
-            t = cw.get("temperature")
-            w = cw.get("windspeed")
-            return (
-                "🛠️ Météo\n\n"
-                f"Ville: **{normalized}**\n"
-                f"Température: **{t}°C**\n"
-                f"Vent: **{w} km/h**"
-            )
-    except httpx.HTTPError as e:
-        return f"Météo indisponible (problème réseau ou service). Détail: {e}"
+            data = r.json()
+
+        current = (data.get("current_condition") or [{}])[0]
+        temp_c = current.get("temp_C", "?")
+        wind_kmh = current.get("windspeedKmph", "?")
+
+        return (
+            f"Ville: **{target}**\n"
+            f"Température: **{temp_c}°C**\n"
+            f"Vent: **{wind_kmh} km/h**"
+        )
+
+    except Exception:
+        return "Ville inconnue ou service météo indisponible."
 
 
 def tool_weather_sync(city: str = "Paris") -> str:
-    """
-    Enveloppe synchrone pour usage simple dans Streamlit.
-    Gère les environnements avec ou sans event loop existant.
-    """
+    """Enveloppe synchrone pour Streamlit."""
     import asyncio
+
     try:
         return asyncio.run(tool_weather(city))
     except RuntimeError:
-        # Cas où une boucle asyncio existe déjà (rare avec Streamlit, mais safe)
         loop = asyncio.new_event_loop()
         try:
             return loop.run_until_complete(tool_weather(city))
@@ -502,67 +327,57 @@ def tool_weather_sync(city: str = "Paris") -> str:
             loop.close()
 
 
-# =====================================================================
-#  Recherche Web (DuckDuckGo)
-# =====================================================================
+# ╔═══════════════════════════════════════════╗
+# ║        3. RECHERCHE WEB (DuckDuckGo)     ║
+# ╚═══════════════════════════════════════════╝
 
 def tool_web_search(query: str, max_results: int = 5) -> str:
     """
-    Recherche texte via DuckDuckGo, retourne une chaîne JSON avec une liste de
-    résultats : [{"title", "href", "body"}, ...].
-
-    La mise en forme (markdown) est gérée par render_web_results() côté app.
+    Recherche texte via DuckDuckGo (ddgs).
+    Retourne un JSON (string) que app.py formate joliment.
     """
-    q = _clean_web_query(query)
-
-    def clip(s: Optional[str], n: int = 300) -> str:
-        s = s or ""
-        return s[:n]
+    cleaned = query.strip()
 
     try:
         with DDGS() as ddgs:
-            results_iter = ddgs.text(
-                q,
-                region="fr-fr",
-                safesearch="moderate",
-                max_results=max_results,
+            results = list(
+                ddgs.text(
+                    cleaned,
+                    region="fr-fr",
+                    safesearch="moderate",
+                    max_results=max_results,
+                )
             )
-            results = list(results_iter)
 
         payload = [
             {
-                "title": clip(r.get("title")),
+                "title": r.get("title"),
                 "href": r.get("href"),
-                "body": clip(r.get("body")),
+                "body": r.get("body"),
             }
             for r in results
         ]
         return json.dumps(payload, ensure_ascii=False)
+
     except Exception as e:
-        return json.dumps({"error": f"Recherche échouée: {e}"}, ensure_ascii=False)
+        return json.dumps({"error": f"Recherche échouée : {e}"}, ensure_ascii=False)
 
 
-# =====================================================================
-#  TODO (persistant sur disque)
-# =====================================================================
+# ╔═══════════════════════════════════════════╗
+# ║          4. TODO LISTE PERSISTANTE        ║
+# ╚═══════════════════════════════════════════╝
 
-_TODO: List[Dict] = []
 _TODO_PATH = Path(__file__).parent / "todo_store.json"
 
-
-def _todo_load() -> None:
-    """Charge la liste TODO depuis disque (si présente)."""
-    global _TODO
-    try:
-        if _TODO_PATH.exists():
-            data = json.loads(_TODO_PATH.read_text(encoding="utf-8"))
-            _TODO = data if isinstance(data, list) else []
-    except Exception:
+try:
+    _TODO: List[Dict] = json.loads(_TODO_PATH.read_text(encoding="utf-8"))
+    if not isinstance(_TODO, list):
         _TODO = []
+except Exception:
+    _TODO = []
 
 
-def _todo_save() -> None:
-    """Sauvegarde la liste TODO vers disque (silencieux si erreur)."""
+def _save_todo():
     try:
         _TODO_PATH.write_text(
             json.dumps(_TODO, ensure_ascii=False, indent=2),
@@ -572,51 +387,68 @@ def _todo_save() -> None:
         pass
 
 
-# Chargement au moment de l'import du module
-_todo_load()
-
-
 def tool_todo(cmd: str) -> str:
     """
-    Gestion d'une TODO-list persistante.
+    To-do list persistante.
 
-    Commandes en langage naturel :
-      - "ajoute : réviser IA"   → ajout
-      - "liste" / "list"        → liste
-      - "termine 2" / "done: 2" → termine tâche n°2
+    Commandes reconnues (en texte libre) :
+      - "ajoute ..." / "add ..."            → ajoute une tâche (sans doublons exacts)
+      - "termine 2" / "done 2"             → marque la tâche #2 comme faite
+      - "liste" / "list"                   → renvoie la liste complète (JSON)
+      - "vide tout" / "reset" / "clear"    → vide complètement la liste
 
-    Retourne une chaîne (markdown ou JSON) prête à afficher.
+    Retour :
+      - En cas de succès : JSON (liste de tâches)
+      - En cas d'erreur : texte explicite
     """
-    q = _normalize_todo_command(cmd)
+    global _TODO
 
-    # Ajout
-    if q.startswith("add:"):
-        text = q[4:].strip()
-        if not text:
-            return "Texte vide."
-        item = {"id": len(_TODO) + 1, "text": text, "done": False}
-        _TODO.append(item)
-        _todo_save()
-        return f"Ajouté: {item}"
+    text = (cmd or "").strip().lower()
 
-    # Terminer une tâche
-    if q.startswith("done:"):
-        try:
-            idx = int(q[5:].strip())
-        except ValueError:
-            return "ID invalide."
-        for it in _TODO:
-            if it["id"] == idx:
-                it["done"] = True
-                _todo_save()
-                return f"Terminé: {it}"
-        return "ID introuvable."
-
-    # Liste
-    if q == "list":
+    # ───── VIDER LA LISTE ─────
+    # Exemples : "vide tout", "reset", "clear", "efface tout"
+    if text.startswith(("vide tout", "vide la liste", "reset", "clear", "efface tout", "supprime tout")):
+        _TODO = []
+        _save_todo()
         return json.dumps(_TODO, ensure_ascii=False)
 
-    return "Commande inconnue (utilise 'add', 'done' ou 'list')."
+    # ───── AJOUT D'UNE TÂCHE ─────
+    if text.startswith("ajoute") or text.startswith("add"):
+        content = re.sub(r"^(ajoute|add)\s*:?", "", cmd, flags=re.I).strip()
+        if not content:
+            return "Texte vide."
+
+        # Anti-doublon : on ne rajoute pas si une tâche avec le même texte existe déjà (insensible à la casse)
+        content_norm = content.strip().lower()
+        for t in _TODO:
+            if t.get("text", "").strip().lower() == content_norm:
+                # On ne rajoute pas, on renvoie simplement l'état actuel de la liste
+                return json.dumps(_TODO, ensure_ascii=False)
+
+        item = {"id": len(_TODO) + 1, "text": content, "done": False}
+        _TODO.append(item)
+        _save_todo()
+        return json.dumps(_TODO, ensure_ascii=False)
+
+    # ───── TERMINER UNE TÂCHE ─────
+    if text.startswith("termine") or text.startswith("done"):
+        m = re.search(r"(\d+)", text)
+        if not m:
+            return "ID manquant."
+        idx = int(m.group(1))
+        for t in _TODO:
+            if t["id"] == idx:
+                t["done"] = True
+                _save_todo()
+                return json.dumps(_TODO, ensure_ascii=False)
+        return "ID inconnu."
+
+    # ───── LISTER LES TÂCHES ─────
+    if text in {"liste", "list"}:
+        return json.dumps(_TODO, ensure_ascii=False)
+
+    # ───── COMMANDE INCONNUE ─────
+    return "Commande inconnue (ajoute, termine X, liste, vide tout)."
 
 
 __all__ = [

@@ -1,151 +1,131 @@
 from __future__ import annotations
 import re
-from typing import Literal, Tuple, Optional
 
 """
-router.py
----------
-Routage simple et robuste vers :
+router.py — Détection des intentions
+-----------------------------------
 
-- "calc"      : calculatrice (sin, cos, sqrt, +, -, ^, etc.)
-- "weather"   : météo
-- "web"       : recherche web
-- "todo"      : gestion TODO
-- "rag"       : questions sur les documents internes
-- "smalltalk" : salutations / conversation légère
+Ce fichier décide si la question doit aller :
+- vers smalltalk
+- vers un outil (calc, weather, todo, web)
+- vers le RAG
 
-Idées clés :
-- On reconnaît d'abord les outils non ambigus (météo, web, todo).
-- La calculatrice NE se déclenche que s'il y a vraiment des maths
-  (chiffres + opérateurs/fonctions).
-- Une phrase comme "c est quoi la cuisine" ira vers RAG + web,
-  pas vers la calculatrice.
+CORRECTIONS IMPORTANTES :
+- _looks_like_math strict → évite les faux positifs (ex : "7 couches du modèle OSI")
+- expressions math reconnues correctement (sin, cos, sqrt, log…)
+- TODO : 
+    - "ajoute ...", "termine X", "liste" → comme avant
+    - "vide tout", "reset", "clear", "efface tout", "supprime tout"
+      sont maintenant bien routés vers tool_todo().
 """
 
-# ───────────────────────── Patterns par intention ─────────────────────────
+# Détecte les mots qui indiquent une recherche météo
+_WEATHER_RE = re.compile(r"\b(meteo|météo|weather|temperature|température|temps)\b", re.I)
 
-# Mots-clés pour météo, web, todo
-_PATTERNS = {
-    "weather": re.compile(
-        r"\b(meteo|météo|temperature|température|fait-il|fait il|temps|vent|pluie|ensoleillé|neige)\b",
-        re.I,
-    ),
-    "web": re.compile(
-        r"\b(recherche|cherche sur (le )?web|internet|google|news|actualit|article|info)\b",
-        re.I,
-    ),
-    "todo": re.compile(
-        r"\b(todo|tâche|tache|ajoute|ajouter|add:|done:|list)\b",
-        re.I,
-    ),
-}
+# Détecte si l'utilisateur veut explicitement une recherche web
+_WEB_RE = re.compile(r"\b(cherche|recherche|search)\b", re.I)
 
-# Calcul : verbes explicites
-_CALC_MAIN_RE = re.compile(
-    r"\b(calcule|calcul|résous|resous|résoudre|resoudre)\b",
+# Détecte les commandes TODO
+_TODO_ADD_RE = re.compile(r"\b(ajoute|ajouter|add)\b", re.I)
+_TODO_DONE_RE = re.compile(r"\b(termine|fini|finis|done)\b", re.I)
+_TODO_LIST_RE = re.compile(r"\b(liste|tasks|taches|tâches)\b", re.I)
+
+# NOUVEAU : détection des commandes de reset TODO
+_TODO_CLEAR_RE = re.compile(
+    r"\b(vide tout|vide la liste|reset|clear|efface tout|supprime tout)\b",
     re.I,
 )
 
-# Indices d'expressions mathématiques
-#   - 2+3, 12 / 4, 3*5, 2^8
-#   - 23², 10³
-#   - sin45, cos(30), sqrt16, log10(100), pi, π
-_MATH_HINT_RE = re.compile(
-    r"""
-    (                                   # une des formes suivantes :
-        \d+\s*[\+\-\*/%^]\s*\d+      |  # 2+3, 4 * 5, 2^8
-        \d+\s*[²³]                   |  # 23², 10³
-        (sin|cos|tan|sqrt|log10?|ln|exp)\s*\d* |  # sin45, sqrt16, exp2
-        \bpi\b | π                      # pi, π
-    )
-    """,
-    re.I | re.X,
-)
+# Détecte formulaire de calcul
+_MATH_HINT_RE = re.compile(r"[0-9+\-*/^()]")
 
-# smalltalk (salutations)
-_GREET = re.compile(r"^\s*(bonjour|salut|coucou|bonsoir|hello|hey)\b", re.I)
-
-# Questions "de cours" (explicites)
-_DOC_QUE = re.compile(
-    r"\b(c('|\s*)est\s+quoi|définis|definition|définition|explique|selon le cours|dans le cours)\b",
-    re.I,
-)
-
-
-# ───────────────────────── Helpers ─────────────────────────
+# Fonctions math reconnues → on va les permettre
+_MATH_FUNC_RE = re.compile(r"\b(sin|cos|tan|sqrt|log|log10|ln|exp|pi|π)\b", re.I)
 
 
 def _looks_like_math(text: str) -> bool:
     """
-    Retourne True si 'text' contient vraiment une expression mathématique.
+    Détection STRICTE des calculs :
+    - au moins un chiffre
+    - présence d'un opérateur (+ - * / ^) OU d'une fonction math
+    - ET correspond à notre regex math
+    → Empêche la phrase 'les 7 couches du modèle OSI' d'aller en calculatrice
 
-    Conditions :
-      - il doit y avoir au moins un chiffre
-      - ET un des patterns de _MATH_HINT_RE
-
-    Ça évite par exemple que :
-      "c est quoi la cuisine"
-    soit pris pour du calcul.
+    Supporte aussi :
+    - sin45
+    - log100
+    - sqrt16
+    - etc.
     """
+
     if not text:
         return False
-    if not any(ch.isdigit() for ch in text):
+
+    t = text.replace(" ", "").lower()
+
+    # 1. Doit contenir un chiffre
+    if not any(c.isdigit() for c in t):
         return False
-    return _MATH_HINT_RE.search(text) is not None
+
+    # 2. Doit contenir un opérateur ou une fonction math
+    if not re.search(r"[+\-*/^]", t) and not _MATH_FUNC_RE.search(t):
+        return False
+
+    # 3. Structure compatible math
+    if not _MATH_HINT_RE.search(text):
+        return False
+
+    return True
 
 
-# ───────────────────────── Noyau de routage ─────────────────────────
-
-
-def detect_intent(
-    text: str,
-) -> Literal["weather", "calc", "web", "todo", "rag", "smalltalk"]:
+def route(text: str):
     """
-    Analyse la question en langage naturel et renvoie une intention.
+    Retourne un tuple (intent, payload)
+    intent ∈ {"smalltalk", "calc", "weather", "todo", "web", "rag"}
 
-    Logique :
-      1) Outils spécifiques (météo, web, todo)
-      2) Calculatrice (verbe explicite ou expression math)
-      3) Smalltalk (salutations)
-      4) Questions de cours explicites
-      5) Par défaut : RAG (documents internes)
+    PRIORITÉ :
+    1. météo
+    2. calculatrice
+    3. todo
+    4. recherche web explicite
+    5. smalltalk simple
+    6. rag par défaut
     """
-    q = (text or "").strip()
 
-    # 1) Outils "non ambigus" d'abord (météo, web, todo)
-    #    -> évite que "météo à Paris" parte dans la calculatrice
-    if _PATTERNS["weather"].search(q) and not _CALC_MAIN_RE.search(q):
-        return "weather"
-    if _PATTERNS["web"].search(q):
-        return "web"
-    if _PATTERNS["todo"].search(q):
-        return "todo"
+    t = (text or "").strip().lower()
 
-    # 2) Calculatrice : verbes explicites OU vraie expression math
-    if _CALC_MAIN_RE.search(q) and any(ch.isdigit() for ch in q):
-        # ex : "résous moi ceci sin45 + sqrt16 + 23²"
-        return "calc"
-    if _looks_like_math(q):
-        # ex : "2+3*4", "sin45", "23²"
-        return "calc"
+    # ────────── METEO
+    if _WEATHER_RE.search(t):
+        return "weather", t
 
-    # 3) Salutations → smalltalk
-    if _GREET.search(q):
-        return "smalltalk"
+    # ────────── CALCUL
+    if _looks_like_math(text):
+        return "calc", text
 
-    # 4) Questions de cours → RAG
-    if _DOC_QUE.search(q):
-        return "rag"
+    # ────────── TODO (ADD / DONE / LIST / CLEAR)
+    #
+    # IMPORTANT :
+    # tool_todo(cmd: str) dans agents.py attend du TEXTE BRUT.
+    # Donc on renvoie toujours `text` comme payload.
+    if _TODO_ADD_RE.search(t):
+        return "todo", text
 
-    # 5) Par défaut → RAG (on privilégie les documents internes)
-    return "rag"
+    if _TODO_DONE_RE.search(t):
+        return "todo", text
 
+    if _TODO_LIST_RE.search(t):
+        return "todo", text
 
-def route(text: str) -> Tuple[str, Optional[str]]:
-    """
-    Retourne (intent, payload).
+    if _TODO_CLEAR_RE.search(t):
+        return "todo", text
 
-    Ici, le payload est simplement le texte brut original, que
-    l'application (app.py) transmettra ensuite au bon outil ou au RAG.
-    """
-    return detect_intent(text), text
+    # ────────── Recherche web explicite
+    if _WEB_RE.search(t):
+        return "web", text
+
+    # ────────── Smalltalk (phrases basiques)
+    if t in {"bonjour", "salut", "hello", "hi"}:
+        return "smalltalk", text
+
+    # ────────── PAR DÉFAUT → RAG
+    return "rag", text

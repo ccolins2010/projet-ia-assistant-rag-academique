@@ -1,19 +1,264 @@
 ### Cours sur les Réseaux Informatiques
 
-Un réseau informatique est un ensemble d’équipements reliés entre eux pour échanger des données.  
-Le modèle OSI (Open Systems Interconnection) comprend 7 couches :
-1. Physique
-2. Liaison de données
-3. Réseau
-4. Transport
-5. Session
-6. Présentation
-7. Application
+> Support de cours d’introduction aux réseaux et à leurs concepts fondamentaux.
 
-TCP (Transmission Control Protocol) est un protocole orienté connexion qui garantit la livraison des paquets.
-UDP (User Datagram Protocol) est sans connexion et plus rapide, mais sans garantie de livraison.
+---
 
-#### Concepts clés :
-- Adresse IP : identifie chaque machine sur le réseau.
-- Routeur : assure le transfert des paquets entre réseaux.
-- DNS : traduit les noms de domaine en adresses IP.
+## 1. Introduction à l’architecture réseau
+
+Un réseau informatique est un ensemble d’équipements reliés entre eux afin d’échanger des données.  
+Chaque machine peut communiquer avec une autre grâce à des protocoles et des mécanismes de transmission.
+
+Les réseaux permettent :
+- le partage de ressources,
+- la communication entre systèmes,
+- l’accès à Internet,
+- la distribution d’applications et de services.
+
+---
+
+## 2. Le modèle OSI (Open Systems Interconnection)
+
+Le modèle OSI est un modèle théorique en **7 couches** servant de référence pour les architectures réseau.
+
+1. **Couche Physique**  
+   - Transmission brute de bits.  
+   - Câbles, fibres optiques, signaux, modulation, connecteurs.
+
+2. **Couche Liaison de données**  
+   - Regroupement des bits en trames.  
+   - Détection d’erreurs.  
+   - Exemples : Ethernet, Wi-Fi (802.11).
+
+3. **Couche Réseau**  
+   - Routage des paquets entre réseaux.  
+   - Protocole principal : **IP**.
+
+4. **Couche Transport**  
+   - Communication de bout en bout entre applications.  
+   - Protocoles : **TCP** (fiable), **UDP** (rapide mais sans garantie).
+
+5. **Couche Session**  
+   - Gestion des connexions (ouvertures, fermetures, synchronisation).
+
+6. **Couche Présentation**  
+   - Format et chiffrement des données (JSON, XML, compression…).
+
+7. **Couche Application**  
+   - Interfaces réseau utilisées par les applications (HTTP, DNS, SMTP…).
+
+Le modèle OSI aide à comprendre où se situent les problèmes réseau.
+
+---
+
+## 3. Le modèle TCP/IP
+
+Modèle utilisé **réellement** sur Internet.  
+Il comporte **4 couches** :
+
+1. Accès réseau  
+2. Internet (IP)  
+3. Transport (TCP/UDP)  
+4. Application (HTTP, FTP, DNS…)
+
+Le modèle TCP/IP est plus simple que le modèle OSI mais reste totalement compatible conceptuellement.
+
+---
+
+## 4. Protocoles de transport : TCP et UDP
+
+### 4.1 TCP (Transmission Control Protocol)
+
+- Protocole **orienté connexion**.  
+- Garantit la livraison des données.  
+- Contrôle de congestion, accusés de réception, retransmissions.
+
+Utilisé pour :
+- Web (HTTP/HTTPS),
+- E-mails,
+- Transferts de fichiers (FTP),
+- Bases de données.
+
+### 4.2 UDP (User Datagram Protocol)
+
+- Protocole **non orienté connexion**.  
+- Pas de garantie de livraison.  
+- Très rapide.
+
+Utilisé pour :
+- Streaming vidéo/audio,
+- Jeux en ligne,
+- VoIP (téléphonie IP).
+
+---
+
+## 5. Concepts fondamentaux
+
+### 5.1 Adresse IP
+
+L’adresse IP identifie chaque machine dans un réseau.
+
+- IPv4 : 32 bits (ex : 192.168.1.10)  
+- IPv6 : 128 bits (ex : 2001:0db8::1)
+
+### 5.2 Masque de sous-réseau
+
+Il définit la partie réseau et la partie hôte d’une adresse IP.
+
+Exemple :  
+192.168.1.0 / 24 → 256 adresses possibles
+
+### 5.3 Passerelle (Gateway)
+
+Routeur utilisé pour sortir d’un réseau local vers Internet.
+
+### 5.4 DNS (Domain Name System)
+
+Traduit un nom de domaine en adresse IP.
+
+Exemples :  
+- google.com → 142.250.74.46  
+- facebook.com → 157.240.20.35  
+
+### 5.5 Routeurs
+
+Appareils permettant de transférer les paquets entre différents réseaux.  
+Ils déterminent le **chemin optimal** (routing).
+
+---
+
+## 6. DHCP : attribution automatique des adresses IP
+
+DHCP (Dynamic Host Configuration Protocol) permet :
+
+- d’attribuer des adresses IP automatiquement,
+- de fournir la passerelle par défaut,
+- de fournir les serveurs DNS,
+- d’éviter les conflits d’adresses.
+
+---
+
+## 7. NAT (Network Address Translation)
+
+Mécanisme utilisé par les box Internet permettant à plusieurs appareils d’utiliser une **même adresse IP publique**.
+
+Types :
+- NAT statique,
+- NAT dynamique,
+- PAT (Port Address Translation).
+
+Exemple :  
+Plusieurs appareils → 1 seule IP visible sur Internet.
+
+---
+
+## 8. LAN, WAN, MAN
+
+### LAN (Local Area Network)
+- Réseau local d’un bâtiment ou d’une maison.
+
+### WAN (Wide Area Network)
+- Réseau large comme Internet ou un réseau d’entreprise internationale.
+
+### MAN (Metropolitan Area Network)
+- Réseau métropolitain (ex : réseau fibre d'une ville).
+
+---
+
+## 9. Wi-Fi et Ethernet
+
+### Ethernet
+- Connexion filaire,
+- Très stable,
+- Débits élevés.
+
+### Wi-Fi
+- Connexion sans fil,
+- Sensible aux interférences,
+- Normes : 802.11 a/b/g/n/ac/ax.
+
+---
+
+## 10. HTTP et HTTPS
+
+Protocole utilisé par les sites web.
+
+- **HTTP** : données non chiffrées.  
+- **HTTPS** : données chiffrées via TLS/SSL.
+
+---
+
+## 11. Email : SMTP, IMAP, POP3
+
+- **SMTP** : envoi d’e-mails  
+- **POP3** : récupération des e-mails, suppression locale  
+- **IMAP** : synchronisation des e-mails sur serveur
+
+---
+
+## 12. Pare-feu (Firewall)
+
+Filtre les paquets réseau en fonction de règles :
+
+- autoriser,
+- bloquer,
+- rediriger.
+
+Protection essentielle dans tout environnement réseau.
+
+---
+
+## 13. Sécurité réseau (bases)
+
+Menaces :
+- attaques par déni de service (DDoS),
+- attaques ARP spoofing,
+- écoute réseau (sniffing),
+- injections DNS,
+- usurpation d’adresse IP.
+
+Contre-mesures :
+- chiffrement,
+- segmentation réseau,
+- HTTPS,
+- VPN,
+- pare-feux,
+- proxies.
+
+---
+
+## 14. Outils réseau courants
+
+### ping  
+Tester la disponibilité d’une machine.
+
+### traceroute / tracert  
+Analyser le chemin réseau parcouru.
+
+### ipconfig / ifconfig  
+Afficher la configuration réseau.
+
+### netstat  
+Lister les connexions actives.
+
+### nslookup  
+Tester le DNS.
+
+---
+
+## 15. Résumé général du cours
+
+Ce cours présente :
+- le modèle OSI,
+- les protocoles TCP/IP,
+- IP, DNS, routeurs, sous-réseaux,
+- TCP vs UDP,
+- Wi-Fi, Ethernet,
+- HTTP/HTTPS,
+- sécurité réseau.
+
+Ces notions constituent les bases de la communication informatique moderne.
+
+---
+
+FIN DU COURS RÉSEAUX

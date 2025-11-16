@@ -9,6 +9,7 @@ chroma_store/
 __pycache__/
 *.pyc
 memory_store.json
+todo_store.json
 
 # Config sensible
 .env
