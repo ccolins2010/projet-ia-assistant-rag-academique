@@ -1,127 +1,217 @@
-# 🧠 Assistant IA Académique — RAG + Ollama + Streamlit
+# 🎓 Assistant IA Académique — RAG + Agents + Ollama + Streamlit
 
-Assistant intelligent académique capable de :
+Assistant académique capable de :
 
 - répondre à des questions à partir de **documents internes** (RAG),
-- exécuter des **calculs** (calculatrice sécurisée),
+- effectuer des **calculs** (calculatrice sécurisée),
 - donner la **météo**,
-- faire des **recherches web** (avec consentement explicite),
+- faire des **recherches web** (avec consentement explicite ou détection d’actualité),
 - gérer une **TODO-list persistante**,
 - envoyer la **dernière réponse par e-mail**,
+- discuter en **smalltalk** avec un modèle local Ollama.
 
-le tout orchestré avec **Ollama**, **LangChain** et **Streamlit**.
-
----
-
-## ✅ Objectifs du projet (côté TP)
-
-Ce projet répond aux exigences :
-
-- **RAG complet** sur des fichiers locaux (cours académiques).
-- **Agents / outils** : calculatrice, météo, recherche web, TODO.
-- **Routage intelligent** : choix automatique entre RAG, outils, smalltalk.
-- **Mémoire conversationnelle** persistante.
-- **Interface conversationnelle** avec Streamlit.
-- **Recherche web** intégrée (avec consentement utilisateur).
-- **Envoi d’e-mails** de la dernière réponse.
-- Code structuré, versionné, avec documentation d’architecture.
+Le tout est orchestré avec **Streamlit**, des outils maison dans `agents.py`, un **RAG léger sans LLM**, et **Ollama** uniquement pour la partie conversationnelle.
 
 ---
 
-## 🚀 1. Fonctionnalités principales
+## ✅ Objectifs pédagogiques (TP)
 
-### 🔹 1.1. RAG (Retrieval-Augmented Generation)
+Ce projet illustre :
 
-- Charge automatiquement les documents du dossier `RAG_Data/`
-- Supporte les formats : `.txt`, `.pdf`, `.docx`
-- Indexation dans un **vector store Chroma** persistant : `chroma_store/`
-- Embeddings : `sentence-transformers/all-MiniLM-L6-v2`
-- LLM local : **Ollama** (`llama3.2:3b`)
-- **Contrôle des hallucinations** :
-  - test de recouvrement lexical (_has_lexical_overlap),
-  - si le contexte ne parle pas clairement de la question → réponse EXACTE :  
-    `Je ne sais pas.`
-
-🧠 **Logique de priorité :**
-
-1. La question part **d’abord** dans le RAG (documents internes).
-2. Si rien de pertinent n’est trouvé :
-   - l’assistant répond :  
-     `Je n’ai rien trouvé dans les documents internes. Veux-tu que je cherche sur le web ? Réponds par oui ou non.`
-   - si l’utilisateur répond **oui** → recherche web,
-   - si **non** → l’assistant reste sur les docs internes / smalltalk.
+- un **RAG simple** basé sur des fichiers texte locaux,
+- des **agents / outils** (calculatrice, météo, TODO, web),
+- un **routage intelligent** (smalltalk / outils / RAG / web),
+- une **mémoire conversationnelle** persistante,
+- une **interface conversationnelle** avec Streamlit,
+- une **recherche web** avec demande de consentement,
+- un **envoi d’e-mails** via SMTP,
+- un code structuré et versionné (Git).
 
 ---
 
-### 🔹 1.2. Outils intégrés (Agents)
+## 🧠 1. RAG interne (sans LLM)
 
-Les outils sont implémentés dans `agents.py`, et sélectionnés automatiquement via le routeur `router.py`.
+**Fichier :** `rag_core.py`
 
-#### 🧮 Calculatrice intelligente
+### Principe
 
-- Comprend des expressions comme :
-  - `2 + 3 * 4`
-  - `2^8`
-  - `23²`, `10³`
-  - `sqrt16`, `log10(100)`, `exp2`
-  - `sin45`, `cos30`, `tan60`, `sin 45°`, `cos 30deg`
-- Normalisations automatiques :
-  - `,` → `.`  
-  - `^` → `**`  
-  - `×`, `÷`, `−`, `–` → `*`, `/`, `-`
-  - conversion degrés → radians (`sin30°` → `sin(0.5235...)`)
-- Sécurisée :
-  - pas de `eval` Python,
-  - parsing via **AST**,
-  - seules certaines opérations / fonctions / constantes sont autorisées.
+- On charge tous les fichiers **`.txt`** du dossier `RAG_Data/`.
+- Chaque fichier est découpé en **sections Markdown** à partir des lignes qui commencent par `##`.
+- Chaque section devient un petit “document” avec :
+  - `page_content` : titre + texte de la section,
+  - `metadata["source"]` : chemin du fichier,
+  - `metadata["section_title"]` : titre de la section.
 
-#### 🌦️ Météo
+### Recherche d’une réponse
 
-- Comprend des requêtes en langage naturel :
-  - `quel temps fait-il à Lyon ?`
-  - `donne-moi la météo pour Nice aujourd'hui`
-  - `meteo paris`
-- Étapes :
-  1. Normalisation du nom de ville (`_normalize_city_free_text`).
-  2. Géocodage via **Nominatim (OpenStreetMap)**.
-  3. Météo actuelle via **Open-Meteo**.
-  4. Fallback sur un petit dictionnaire interne (`Paris`, `Lyon`, `Marseille`, etc.) si les APIs externes échouent.
+Pour une question :
 
-#### 🔍 Recherche web
+1. La question est **normalisée** (minuscules, accents enlevés, ponctuation simplifiée).
+2. On essaie d’abord de trouver une **section dont le titre correspond** à la question :
+   - soit le titre est contenu dans la question,
+   - soit la question est contenue dans le titre.
+3. Sinon, on calcule un **score combiné** pour chaque section :
+   - similarité floue entre le titre et la question,
+   - nombre de mots-clés communs (normalisés).
+4. On garde la meilleure section **seulement si le score est suffisant**  
+   (pour éviter de raconter n’importe quoi).
+5. Si aucune section n’est jugée pertinente :
+   - `answer = "La réponse ne se trouve pas dans les documents internes."`
+   - `source_documents = []`
 
-- Utilise **DuckDuckGo Search** via la librairie `ddgs`.
-- Deux manières de l’utiliser :
-  - **explícite** :  
-    `recherche sur le web la cuisine italienne`  
-    `cherche sur internet les réseaux de neurones`
-  - **après échec du RAG** (avec consentement) :
-    - l’assistant demande **oui/non**
-    - si **oui**, il affiche une liste de résultats formatés (titre + lien + extrait).
-
-#### 📝 Gestion TODO
-
-- Commandes en langage naturel :
-  - `ajoute : réviser IA`
-  - `ajoute réviser réseaux`
-  - `liste` / `list`
-  - `termine 2` / `done: 2`
-- Les tâches sont stockées dans `todo_store.json` (persistance entre les sessions).
-- L’interface Streamlit reformate le JSON en liste lisible avec :
-  - ✅ tâches terminées  
-  - 🔹 tâches en cours
-
-#### 💬 Smalltalk
-
-- Gère les salutations simples :
-  - `bonjour`, `salut`, `coucou`, `bonsoir`, `hello`, `hey`…
-- Utilise un LLM local via Ollama (`llama3.2:3b`) avec un prompt simple :
-  > "Tu es un assistant amical et bref."
+📌 **Important :**  
+Le RAG **ne fait appel à aucun LLM**.  
+La réponse est un **extrait brut** de tes cours (`Cours_IA.txt`, `Cours_Python.txt`, `Cours_Reseaux.txt`, etc.).
 
 ---
 
-### 🔹 1.3. Envoi de la dernière réponse par e-mail
+## 🤖 2. Agents / Outils (`agents.py`)
 
-- Configuration dans `.env` :
+Tous les outils renvoient du **texte prêt à afficher** dans `app.py`.
+
+---
+
+### 🧮 2.1. Calculatrice sécurisée
+
+- Analyse les expressions mathématiques via l’AST Python (pas de `eval`).
+- Opérations et fonctions autorisées :
+  - `+`, `-`, `*`, `/`, `**`
+  - `sqrt`, `sin`, `cos`, `tan`, `log`, `log10`, `exp`
+  - constantes : `pi`, `e`
+
+#### Expressions comprises
+
+Exemples d’expressions reconnues :
+
+- `2 + 3 * 4`
+- `2^8` → `2**8`
+- `2² + 3³`
+- `sqrt16`, `log50`, `exp2`
+- `sin45`, `cos30`, `tan60`  
+  → les angles sont interprétés en **degrés** puis convertis en radians :
+  - `sin45` → `sin(0,785398...)`
+  - `sin 45°` ou `sin(45deg)` idem
+- `e4` → `e**4`
+- `5(4*5)` → `5*(4*5)` (multiplication implicite)
+
+#### Sécurité
+
+- Seuls certains types de nœuds AST sont autorisés.
+- Les noms non autorisés lèvent une erreur (`Symbole non autorisé`).
+- En cas de problème :  
+  `Résultat: Erreur calcul: ...`
+
+---
+
+### 🌦️ 2.2. Météo mondiale (wttr.in)
+
+Fonctions :
+
+- `tool_weather(city: str)` (asynchrone)
+- `tool_weather_sync(city: str)` (synchrone pour Streamlit)
+
+Caractéristiques :
+
+- Utilise `wttr.in` en mode JSON (`format=j1`).
+- Supporte des requêtes en texte libre :
+  - `meteo rouen`
+  - `donne la météo à nantes`
+  - `meteo vinci`
+- La fonction `_normalize_city_free_text()` :
+  - filtre les mots outils (`meteo`, `à`, `la`, etc.),
+  - récupère le nom de ville probable,
+  - renvoie un nom propre : `Rouen`, `Nantes`, `Vinci`, etc.
+
+Exemple de retour :
+
+```text
+Ville: Vinci
+Température: 4°C
+Vent: 22 km/h
+
+### 🌐 2.3. Recherche web (DuckDuckGo)
+
+**Fonction :** `tool_web_search(query: str, max_results: int = 5)`
+
+- Utilise la librairie `ddgs` (DuckDuckGo Search).
+- Retourne une **liste JSON** de résultats :
+
+```json
+[
+  {
+    "title": "Titre du résultat",
+    "href": "https://exemple.com",
+    "body": "Petit extrait du contenu..."
+  }
+]
+
+### 📝 2.4. TODO-list persistante
+
+- **Fichier de stockage :** `todo_store.json`  
+- **Fonction principale :** `tool_todo(cmd: str)`
+
+#### Commandes supportées
+
+**➕ Ajouter une tâche :**
+
+- `ajoute faire les courses`  
+- `ajoute : reviser le cours IA`  
+- `add reviser le cours réseaux`  
+
+**✅ Marquer une tâche comme terminée :**
+
+- `termine 2`  
+- `done 2`  
+
+**📋 Lister les tâches :**
+
+- `liste`  
+- `list`  
+
+**🗑️ Vider la liste :**
+
+- `efface tout`  
+- `reset`  
+- `clear`  
+
+Les tâches sont stockées en **JSON**, et `app.py` reformate la réponse en liste lisible dans l’interface Streamlit.
+
+## 💬 3. Smalltalk (Ollama)
+
+- **Fichiers concernés :** `app.py` et `router.py`  
+
+Le smalltalk gère les messages du type :
+
+- `bonjour`, `salut`, `coucou`  
+- `ça va ?`, `comment tu vas ?`, etc.
+
+`router.py` détecte ces formulations et retourne l’intention **`smalltalk`**.
+
+Dans `app.py`, on utilise un modèle local via `ChatOllama` :
+
+- **Modèle configurable** via la variable d’environnement `OLLAMA_MODEL`  
+  - valeur par défaut : `llama3.2:3b`
+- **Prompt système utilisé :**  
+  > "Tu es un assistant amical, bref et poli."
+
+📌 **Important :**  
+Ollama **n’est pas utilisé pour le RAG**.  
+Il sert uniquement pour la **discussion générale (smalltalk)**.
+
+## 📧 4. Envoi d’e-mail (dernière réponse)
+
+Dans `app.py` :
+
+- L’assistant détecte des commandes du type :
+  - `envoi la reponse à ccolins2010@yahoo.fr`
+  - `envoie la réponse à mon mail ...`
+  - `peux-tu envoyer la réponse par email à ...`
+- Une adresse e-mail est extraite avec une **regex**, avec correction de petites fautes
+  (par exemple : `yahoo;fr` → `yahoo.fr`).
+- La fonction `send_email_smtp()` envoie **la dernière réponse de l’assistant**
+  à l’adresse détectée.
+
+Configuration SMTP dans `.env` :
 
 ```env
 SMTP_HOST=smtp.gmail.com
@@ -131,41 +221,117 @@ SMTP_PASS=mot_de_passe_application
 SMTP_FROM=ton.email@gmail.com
 
 
-### 🔹 3. Envoi de la dernière réponse par e-mail
+```markdown
+## 🔀 5. Routage des requêtes (app.py + router.py)
 
-- Configuré via `.env` :
+La fonction principale `handle_user_query()` dans `app.py` suit cet ordre logique :
 
-```env
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=ton.email@gmail.com
-SMTP_PASS=mot_de_passe_application
-SMTP_FROM=ton.email@gmail.com
+1. **Réponse oui/non après échec du RAG**
+   - Si on attend une réponse à  
+     > « Souhaites-tu que je cherche sur le web ? (oui / non) »
+   - alors :
+     - si l’utilisateur répond **oui** → appel à `tool_web_search(...)`
+     - si l’utilisateur répond **non** → l’assistant reste sur les documents internes.
 
-projet-ia-assistant-rag-academique/
-│
-├── app.py                 # Application Streamlit (UI + orchestration RAG / tools / web / e-mail)
-├── agents.py              # Outils : calculatrice, météo, recherche web, TODO
-├── router.py              # Détection d’intention (calc / météo / web / rag / todo / smalltalk)
-├── rag_core.py            # Moteur RAG (Chroma + embeddings + Ollama)
-├── rag.py                 # (optionnel) API simplifiée autour du moteur RAG
-├── reindex_once.py        # Script pour forcer une réindexation des documents
-│
-├── RAG_Data/              # Documents internes utilisés par le RAG
-│   ├── Cours_IA.txt
-│   ├── Cours_Pytho.txt
-│   └── Cours_Reseaux.txt
-│
-├── chroma_store/          # Index vectoriel persistant (créé automatiquement)
-├── todo_store.json        # Stockage persistant des tâches TODO
-├── memory_store.json      # Historique de conversation (chat) persistant
-│
-├── requirements.txt       # Dépendances Python
-├── .env                   # Variables d’environnement (SMTP, etc.)
-├── .gitignore             # Exclusions Git
-└── README.md              # Documentation du projet
+2. **Détection d’une commande e-mail**
+   - Si la phrase contient une commande du type :  
+     `envoi la réponse à ...`
+   - alors `send_email_smtp()` est appelé.
 
+3. **Ajout du message utilisateur à l’historique**
+   - Le message est stocké dans `memory_store.json`.
+
+4. **Détection rapide de certains cas**
+   - Si le texte contient `calcule`, `combien fait`, etc. → `intent = "calc"`
+   - Si le texte parle d’**actualité** ou de  
+     `qui est le président ...` → `intent = "web"`
+
+5. **Routage général via `router.py`**
+   - Si ce n’est pas un cas forcé, `router.py` décide de l’intention :
+     - `smalltalk`, `weather`, `todo`, `web` ou `rag`.
+
+6. **Si un outil est déclenché (calc, météo, todo, web)**
+   - `app.py` appelle l’outil correspondant dans `agents.py`,
+   - formate la réponse,
+   - l’affiche,
+   - et l’ajoute à l’historique.
+
+7. **Sinon → RAG interne**
+   - `answer_question()` est appelé avec la question.
+   - Si une section pertinente est trouvée → on renvoie **l’extrait de cours + la source**.
+   - Sinon → on propose :
+
+     > Je n’ai rien trouvé dans les documents internes.  
+     > 👉 Souhaites-tu que je cherche sur le web ? (oui / non)
+
+## 🛠️ 7. Installation & Lancement
+
+### 7.1. Cloner le projet
+
+```bash
+git clone <URL_DU_REPO>
+cd projet-ia-assistant-rag-academique
+
+### 7.2. Créer un environnement virtuel
+
+```bash
+python -m venv .venv
+
+### 7.3. Installer les dépendances
+
+```bash
 pip install -r requirements.txt
-ollama run llama3.2:3b
+
+### 7.4. Configurer Ollama
+
+1. Installer **Ollama** sur ta machine (depuis le site officiel).
+2. Télécharger le modèle utilisé par l’assistant, puis lancer le serveur :
+
+```bash
+ollama pull llama3.2:3b
+ollama serve
+
+### 7.5. Configurer le fichier `.env`
+
+Créer un fichier `.env` à la racine du projet avec le contenu suivant :
+
+```env
+# Modèle utilisé pour le smalltalk (Ollama)
+OLLAMA_MODEL=llama3.2:3b
+
+# SMTP pour l'envoi d'e-mails
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=ton.email@gmail.com
+SMTP_PASS=mot_de_passe_application
+SMTP_FROM=ton.email@gmail.com
+
+### 7.6. Lancer l’application Streamlit
+
+Dans le terminal (en ayant bien activé l'environnement virtuel) :
+
+```bash
 streamlit run app.py
 
+L’interface sera accessible sur : <http://localhost:8501/>
+
+## ✅ 8. Exemples de requêtes à tester
+
+Quelques exemples de requêtes à essayer dans l’interface :
+
+- `qu’est-ce que l’IA ?`
+- `Brève histoire de l'IA`
+- `c’est quoi Python`
+- `c’est quoi un réseau informatique`
+- `calcule 2²+log50`
+- `calcule sin45`
+- `calcule e4`
+- `meteo rouen`
+- `meteo vinci`
+- `ajoute reviser le cours IA`
+- `liste`
+- `termine 1`
+- `efface tout`
+- `qui est le president des USA`
+- `actualité intelligence artificielle`
+- `envoi la reponse à monmail@exemple.com`

@@ -3,18 +3,18 @@ from __future__ import annotations
 # """
 # app.py — Version finale stable pour Assistant Académique RAG + Agents
 # --------------------------------------------------------------------
-
+#
 # Pipeline général :
-
+#
 # 1) Gestion du consentement de recherche web (oui / non)
 # 2) Détection e-mail → envoi SMTP via ton compte Gmail (config .env)
 # 3) Smalltalk (discussion simple)
 # 4) Agents (calcul, météo, TODO, recherche web explicite)
 # 5) RAG interne (réponses strictes basées sur tes documents)
 # 6) Si RAG ne sait pas → demande de consentement pour recherche web
-
+#
 # Points clés :
-
+#
 # - Détection d'e-mails robuste, y compris :
 #   "envoi la réponse à ...", "envoie un mail à ...", "envoi mail ...", etc.
 # - Utilisation d'un mot de passe d'application Gmail via .env
@@ -33,7 +33,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from rag_core import answer_question, reindex, LLM_MODEL
+# ⬇️ IMPORTANT : on n'importe plus LLM_MODEL ici
+from rag_core import answer_question, reindex
 from router import route
 from agents import (
     tool_calculator,
@@ -46,6 +47,19 @@ from langchain_ollama import ChatOllama
 
 
 # ─────────────────────────────────────────────
+# CONFIG GLOBALE
+# ─────────────────────────────────────────────
+
+ROOT = Path(__file__).parent
+MEMORY_PATH = ROOT / "memory_store.json"
+MAX_TURNS = 30
+
+# Modèle Ollama pour le smalltalk / LLM
+# Tu peux changer dans ton .env : OLLAMA_MODEL=llama3.2:1b par exemple
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+
+
+# ─────────────────────────────────────────────
 # CONFIG STREAMLIT
 # ─────────────────────────────────────────────
 
@@ -55,10 +69,6 @@ st.set_page_config(
     layout="centered",
 )
 st.title("🎓 Assistant Académique — RAG + Agents")
-
-ROOT = Path(__file__).parent
-MEMORY_PATH = ROOT / "memory_store.json"
-MAX_TURNS = 30
 
 
 # ─────────────────────────────────────────────
@@ -100,8 +110,13 @@ def save_memory(history):
 def get_smalltalk_llm():
     """
     Modèle Ollama dédié au smalltalk (température légèrement plus élevée).
+    Utilise OLLAMA_MODEL (par défaut: llama3.2:3b).
     """
-    return ChatOllama(model=LLM_MODEL, temperature=0.4)
+    return ChatOllama(
+        model=OLLAMA_MODEL,
+        temperature=0.4,
+        # base_url="http://localhost:11434",  # à décommenter si besoin
+    )
 
 
 # ─────────────────────────────────────────────
@@ -197,24 +212,17 @@ def detect_email_command(text: str) -> Optional[str]:
       - "envoi la reponse à mon mail : xxx@yy.com"
       - "peux-tu envoyer un email à toto@test.org ?"
       - "envoi un mail vers ccolins2010@yahoo;fr"
-
-    Logique :
-      1) On vérifie qu'il y a un "trigger" type mail/email/envoi/envoie…
-      2) On corrige les ';' en '.' pour yahoo;fr → yahoo.fr
-      3) On extrait la première adresse trouvée via regex
     """
     if not text:
         return None
 
     t_low = text.lower()
 
-    # ⚠️ On inclut explicitement "envoi" (ton cas), ainsi que
-    # différentes formes autour de "envoyer".
     triggers = [
         "mail",
         "email",
         "courriel",
-        "envoi",      # <--- IMPORTANT : ton cas
+        "envoi",      # formes courantes
         "envoie",
         "envoyer",
         "envoies",
@@ -225,7 +233,7 @@ def detect_email_command(text: str) -> Optional[str]:
     if not any(trig in t_low for trig in triggers):
         return None
 
-    # Correction de petites fautes de frappe type yahoo;fr → yahoo.fr
+    # Correction de fautes de frappe type yahoo;fr → yahoo.fr
     cleaned = text.replace(";", ".").replace(",", ".")
 
     m = EMAIL_RE.search(cleaned)
@@ -249,7 +257,7 @@ def send_email_smtp(to_addr: str, subject: str, body: str):
     Retourne (success: bool, message: str)
     """
     import smtplib
-    from email.mime.text import MIMEText
+    from email.mime.text import MIMEText  # ✅ CORRECTION ICI
 
     host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     port = int(os.getenv("SMTP_PORT", 587))
@@ -297,7 +305,7 @@ NO = re.compile(r"^\s*(non|no|n)\b", re.I)
 
 def handle_user_query(user_text: str):
     """
-    Gère une nouvelle entrée utilisateur selon le pipeline défini en haut.
+    Gère une nouvelle entrée utilisateur selon le pipeline défini.
     """
 
     # ───── 0) Gestion d'une réponse OUI/NON pour la recherche web ─────
@@ -357,10 +365,38 @@ def handle_user_query(user_text: str):
     # ───── 2) Ajout de la question à l'historique ─────
     st.session_state.chat_history.append({"role": "user", "content": user_text})
 
-    # ───── 3) Routing via router.py (smalltalk / tools / rag) ─────
-    intent, payload = route(user_text)
+    # ───── 3) Détection directe de certains cas (math / actu) puis routing général ─────
+    lower = user_text.lower()
 
-    # 3.a Smalltalk
+    # 3.a Cas "math" évidents → on force la calculatrice
+    math_triggers = (
+        "calcule",
+        "calcul ",
+        "combien fait",
+        "résous",
+        "resous",
+        "résoudre",
+        "resoudre",
+    )
+    if any(t in lower for t in math_triggers):
+        intent, payload = "calc", user_text
+
+    # 3.b Questions d'actualité / faits généraux → on force la recherche web
+    elif (
+        "actualité" in lower
+        or "actu " in lower
+        or "dernières nouvelles" in lower
+        or "dernieres nouvelles" in lower
+        or "news" in lower
+        or ("qui est" in lower and ("president" in lower or "président" in lower))
+    ):
+        intent, payload = "web", user_text
+
+    else:
+        # Sinon, on laisse router.py décider (smalltalk / météo / todo / rag / web explicite…)
+        intent, payload = route(user_text)
+
+    # 3.c Smalltalk
     if intent == "smalltalk":
         llm = get_smalltalk_llm()
         out = llm.invoke([
@@ -373,7 +409,7 @@ def handle_user_query(user_text: str):
         st.chat_message("assistant").markdown(answer)
         return
 
-    # 3.b Outils (calculatrice, météo, todo, recherche web explicite)
+    # 3.d Outils (calculatrice, météo, todo, recherche web explicite)
     if intent in {"calc", "weather", "todo", "web"}:
         try:
             if intent == "calc":
@@ -421,7 +457,7 @@ def handle_user_query(user_text: str):
     docs = res["source_documents"]
 
     # Si le RAG sait répondre (et n'a pas dit "Je ne sais pas.")
-    if docs and answer.lower().strip() != "je ne sais pas.":  
+    if docs and answer.lower().strip() != "je ne sais pas.":
         src = docs[0].metadata.get("source", "inconnu")
         msg = f"{answer}\n\n---\n📎 **Source :** `{src}`"
         st.session_state.chat_history.append({"role": "assistant", "content": msg})
